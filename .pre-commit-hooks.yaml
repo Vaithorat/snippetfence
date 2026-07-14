@@ -1,0 +1,6 @@
+- id: snippetfence
+  name: SnippetFence - Protected code regions
+  description: Checks that code regions marked with @fence-begin/@fence-end are not modified
+  entry: npx snippetfence check
+  language: system
+  stages: [pre-commit]

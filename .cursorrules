@@ -1,0 +1,31 @@
+# snippetfence Rules
+
+## Protected Regions
+
+Code marked with `@fence-begin`/`@fence-end` annotations is protected from AI modification.
+
+### Do NOT:
+- Modify code inside fenced regions
+- Remove `@fence-begin`/`@fence-end` markers without user approval
+- Suggest changes to fenced code
+
+### DO:
+- Read fenced regions for context
+- Use `npx snippetfence scan <file>` to check protection status
+- Ask the user before modifying any fenced region
+
+### Checking Protection
+
+```bash
+npx snippetfence list         # List all protected regions
+npx snippetfence scan <file>  # Check a specific file
+npx snippetfence check        # Check staged changes
+```
+
+## Development
+
+```bash
+npm install
+npm test
+npm run build
+```

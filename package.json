@@ -1,0 +1,83 @@
+{
+  "name": "snippetfence",
+  "version": "1.0.0",
+  "description": "Protect code regions from AI agents with simple annotations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "snippetfence": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "code-protection",
+    "pre-commit",
+    "claude",
+    "cursor",
+    "copilot",
+    "codex",
+    "gemini",
+    "windsurf",
+    "cline",
+    "opencode",
+    "devin",
+    "amp",
+    "aider",
+    "roo",
+    "zed",
+    "junie",
+    "amazon-q",
+    "mcp",
+    "snippetfence",
+    "fence",
+    "protect",
+    "annotation"
+  ],
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md",
+    ".pre-commit-hooks.yaml"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snippetfence/snippetfence.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snippetfence/snippetfence/issues"
+  },
+  "homepage": "https://github.com/snippetfence/snippetfence#readme",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "cac": "^6.7.14",
+    "fast-glob": "^3.3.3",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "eslint": "^9.27.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

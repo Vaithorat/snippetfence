@@ -1,11 +1,11 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import fg from 'fast-glob';
+import { DEFAULT_IGNORE } from './parser.js';
 
 export function isGitRepo(cwd: string): boolean {
   try {
-    execSync('git rev-parse --git-dir', { cwd, stdio: 'pipe' });
+    execFileSync('git', ['rev-parse', '--git-dir'], { cwd, stdio: 'pipe' });
     return true;
   } catch {
     return false;
@@ -14,7 +14,7 @@ export function isGitRepo(cwd: string): boolean {
 
 export function getGitRoot(cwd: string): string {
   try {
-    return execSync('git rev-parse --show-toplevel', {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd,
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -41,6 +41,6 @@ export function findFiles(rootDir: string, patterns: string[]): string[] {
   return fg.sync(patterns, {
     cwd: rootDir,
     absolute: true,
-    ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/build/**'],
+    ignore: [...DEFAULT_IGNORE],
   });
 }

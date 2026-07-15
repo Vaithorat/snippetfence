@@ -8,70 +8,94 @@ export function generateInstructions(rootDir: string, options: GenerateOptions):
 
   switch (options.format) {
     case 'claude-md':
-      return generateClaudeMd(regions);
+      return generateClaudeMd(regions, rootDir);
     case 'agents-md':
-      return generateAgentsMd(regions);
+      return generateGenericMd('Code Protection', regions, rootDir);
     case 'cursor-rules':
-      return generateCursorRules(regions);
+      return generateCursorRules(regions, rootDir);
     case 'cursor-mdc':
-      return generateCursorMdc(regions);
+      return generateCursorMdc(regions, rootDir);
     case 'gemini-md':
-      return generateGeminiMd(regions);
+      return generateGeminiMd(regions, rootDir);
     case 'copilot':
-      return generateCopilotInstructions(regions);
+      return generateCopilotInstructions(regions, rootDir);
+    case 'windsurf':
+      return generateWindsurfRules(regions, rootDir);
+    case 'cline':
+      return generateClineRules(regions, rootDir);
     default:
-      return generateAgentsMd(regions);
+      return generateGenericMd('Code Protection', regions, rootDir);
   }
 }
 
-function generateClaudeMd(regions: ProtectedRegion[]): string {
+function relPath(filePath: string, rootDir: string): string {
+  return path.relative(rootDir, filePath);
+}
+
+function generateRegionList(regions: ProtectedRegion[], rootDir: string): string[] {
+  return regions.map(r => `- \`${relPath(r.filePath, rootDir)}:${r.startLine}-${r.endLine}\`${r.reason ? ` — ${r.reason}` : ''}`);
+}
+
+function generateRegionListInline(regions: ProtectedRegion[], rootDir: string): string[] {
+  return regions.map(r => `- ${relPath(r.filePath, rootDir)}:${r.startLine}-${r.endLine}${r.reason ? ` (${r.reason})` : ''}`);
+}
+
+function generateClaudeMd(regions: ProtectedRegion[], rootDir: string): string {
   if (regions.length === 0) {
     return '## Protected Code\n\nNo fenced regions found in this repository.\n';
   }
 
-  const lines = ['## Protected Code Regions', '', 'The following code regions are fenced and must not be modified:', ''];
-  for (const r of regions) {
-    const relPath = path.relative(process.cwd(), r.filePath);
-    const reason = r.reason ? ` — ${r.reason}` : '';
-    lines.push(`- \`${relPath}:${r.startLine}-${r.endLine}\`${reason}`);
-  }
-  lines.push('');
-  lines.push('These regions are marked with `@fence-begin`/`@fence-end` annotations.');
-  lines.push('Do not modify code between these markers.');
-  lines.push('');
+  const lines = [
+    '## Protected Code Regions',
+    '',
+    'The following code regions are fenced and must not be modified:',
+    '',
+    ...generateRegionList(regions, rootDir),
+    '',
+    'These regions are marked with `@fence-begin`/`@fence-end` annotations.',
+    'Do not modify code between these markers.',
+    '',
+  ];
   return lines.join('\n');
 }
 
-function generateAgentsMd(regions: ProtectedRegion[]): string {
+function generateGenericMd(title: string, regions: ProtectedRegion[], rootDir: string): string {
+  const h = `# ${title}`;
   if (regions.length === 0) {
-    return '## Code Protection\n\nNo fenced regions found in this repository.\n';
+    return `${h}\n\nNo fenced regions found in this repository.\n`;
   }
 
-  const lines = ['## Code Protection', '', 'Several code regions are marked with `@fence` annotations and must not be modified.', ''];
-  lines.push('Run `npx snippetfence list` to see all protected regions.');
-  lines.push('');
-  lines.push('Do not modify code between `@fence-begin` and `@fence-end` markers.');
-  lines.push('');
+  const lines = [
+    h,
+    '',
+    'Several code regions are marked with `@fence` annotations and must not be modified.',
+    '',
+    'Run `npx snippetfence list` to see all protected regions.',
+    '',
+    'Do not modify code between `@fence-begin` and `@fence-end` markers.',
+    '',
+    ...generateRegionList(regions, rootDir),
+    '',
+  ];
   return lines.join('\n');
 }
 
-function generateCursorRules(regions: ProtectedRegion[]): string {
+function generateCursorRules(regions: ProtectedRegion[], rootDir: string): string {
   if (regions.length === 0) {
     return 'DO NOT modify code between @fence-begin and @fence-end markers. No regions currently fenced.';
   }
 
-  const lines = ['DO NOT modify code between @fence-begin and @fence-end markers.', ''];
-  lines.push('Run `npx snippetfence list` to see all protected regions.');
-  lines.push('');
-  for (const r of regions) {
-    const relPath = path.relative(process.cwd(), r.filePath);
-    const reason = r.reason ? ` (${r.reason})` : '';
-    lines.push(`- ${relPath}:${r.startLine}-${r.endLine}${reason}`);
-  }
+  const lines = [
+    'DO NOT modify code between @fence-begin and @fence-end markers.',
+    '',
+    'Run `npx snippetfence list` to see all protected regions.',
+    '',
+    ...generateRegionListInline(regions, rootDir),
+  ];
   return lines.join('\n');
 }
 
-function generateCursorMdc(regions: ProtectedRegion[]): string {
+function generateCursorMdc(regions: ProtectedRegion[], rootDir: string): string {
   const lines = [
     '---',
     'description: Fenced code protection - do not modify protected regions',
@@ -86,11 +110,7 @@ function generateCursorMdc(regions: ProtectedRegion[]): string {
   if (regions.length > 0) {
     lines.push('Run `npx snippetfence list` to see all protected regions.');
     lines.push('');
-    for (const r of regions) {
-      const relPath = path.relative(process.cwd(), r.filePath);
-      const reason = r.reason ? ` (${r.reason})` : '';
-      lines.push(`- ${relPath}:${r.startLine}-${r.endLine}${reason}`);
-    }
+    lines.push(...generateRegionListInline(regions, rootDir));
   } else {
     lines.push('No regions currently fenced.');
   }
@@ -99,33 +119,79 @@ function generateCursorMdc(regions: ProtectedRegion[]): string {
   return lines.join('\n');
 }
 
-function generateGeminiMd(regions: ProtectedRegion[]): string {
-  if (regions.length === 0) {
-    return '## Code Protection\n\nNo fenced regions found in this repository.\n';
-  }
-
-  const lines = ['## Code Protection', '', 'Several code regions are marked with `@fence` annotations and must not be modified.', ''];
-  lines.push('Run `npx snippetfence list` to see all protected regions.');
-  lines.push('');
-  lines.push('Do not modify code between `@fence-begin` and `@fence-end` markers.');
-  lines.push('');
-  return lines.join('\n');
-}
-
-function generateCopilotInstructions(regions: ProtectedRegion[]): string {
+function generateCopilotInstructions(regions: ProtectedRegion[], rootDir: string): string {
   if (regions.length === 0) {
     return '## Protected Code\n\nNo fenced regions found in this repository.\n';
   }
 
-  const lines = ['## Protected Code', '', 'Do not modify code between `@fence-begin` and `@fence-end` markers.', ''];
-  lines.push('Run `npx snippetfence list` to see all protected regions.');
-  lines.push('');
-  for (const r of regions) {
-    const relPath = path.relative(process.cwd(), r.filePath);
-    const reason = r.reason ? ` — ${r.reason}` : '';
-    lines.push(`- \`${relPath}:${r.startLine}-${r.endLine}\`${reason}`);
+  const lines = [
+    '## Protected Code',
+    '',
+    'Do not modify code between `@fence-begin` and `@fence-end` markers.',
+    '',
+    'Run `npx snippetfence list` to see all protected regions.',
+    '',
+    ...generateRegionList(regions, rootDir),
+    '',
+  ];
+  return lines.join('\n');
+}
+
+function generateGeminiMd(regions: ProtectedRegion[], rootDir: string): string {
+  if (regions.length === 0) {
+    return '# Gemini Code Protection\n\nNo fenced regions found in this repository.\n';
   }
-  lines.push('');
+
+  const lines = [
+    '# Gemini Code Protection',
+    '',
+    'CRITICAL: Do not modify code between `@fence-begin` and `@fence-end` markers.',
+    'These regions contain security-sensitive or compliance-critical code.',
+    '',
+    ...generateRegionList(regions, rootDir),
+    '',
+    'If you need to modify a protected region, ask the user to remove the markers first.',
+    '',
+  ];
+  return lines.join('\n');
+}
+
+function generateWindsurfRules(regions: ProtectedRegion[], rootDir: string): string {
+  if (regions.length === 0) {
+    return 'PROTECTED CODE: Do not modify code between @fence-begin and @fence-end markers. No regions currently fenced.';
+  }
+
+  const lines = [
+    'PROTECTED CODE: Do not modify code between @fence-begin and @fence-end markers.',
+    '',
+    'These regions are annotated by snippetfence for code protection.',
+    'Ask the user before suggesting any changes to fenced regions.',
+    '',
+    ...generateRegionListInline(regions, rootDir),
+  ];
+  return lines.join('\n');
+}
+
+function generateClineRules(regions: ProtectedRegion[], rootDir: string): string {
+  if (regions.length === 0) {
+    return '# SnippetFence Rules\n\nNo fenced regions found in this repository.\n';
+  }
+
+  const lines = [
+    '# SnippetFence Rules',
+    '',
+    'You MUST NOT modify code between `@fence-begin` and `@fence-end` markers.',
+    'These regions are protected and require explicit user approval to change.',
+    '',
+    'Run `npx snippetfence list` to see all protected regions.',
+    '',
+    'Protected regions:',
+    '',
+    ...generateRegionList(regions, rootDir),
+    '',
+    'If a task requires modifying a fenced region, inform the user which regions are affected and ask for confirmation.',
+    '',
+  ];
   return lines.join('\n');
 }
 
@@ -133,6 +199,7 @@ export function writeGeneratedFile(rootDir: string, options: GenerateOptions): s
   const content = generateInstructions(rootDir, options);
   const fileName = getOutputFileName(options.format);
   const outputPath = options.outputPath ?? path.join(rootDir, fileName);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, content, 'utf-8');
   return outputPath;
 }
@@ -145,6 +212,8 @@ function getOutputFileName(format: GenerateOptions['format']): string {
     case 'cursor-mdc': return '.cursor/rules/protect-fenced.mdc';
     case 'gemini-md': return 'GEMINI.md';
     case 'copilot': return '.github/copilot-instructions.md';
+    case 'windsurf': return '.windsurfrules';
+    case 'cline': return '.clinerules/snippetfence.md';
     default: return 'AGENTS.md';
   }
 }

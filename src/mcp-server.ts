@@ -1,13 +1,14 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
+import * as path from 'node:path';
 import { parseFile, parseRepo } from './parser.js';
-import type { ProtectedRegion } from './types.js';
+import { VERSION } from './version.js';
 
-export function createMcpServer(): McpServer {
+export async function createMcpServer(): Promise<import('@modelcontextprotocol/sdk/server/mcp.js').McpServer> {
+  const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
+  const { z } = await import('zod');
+
   const server = new McpServer({
     name: 'snippetfence',
-    version: '1.0.0',
+    version: VERSION,
   });
 
   server.tool(
@@ -40,11 +41,11 @@ export function createMcpServer(): McpServer {
         };
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         };
       } catch (error) {
         return {
-          content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+          content: [{ type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
           isError: true,
         };
       }
@@ -63,18 +64,18 @@ export function createMcpServer(): McpServer {
         const regions = parseRepo(dir);
 
         const result = regions.map(r => ({
-          file: r.filePath,
+          file: path.relative(dir, r.filePath),
           startLine: r.startLine,
           endLine: r.endLine,
           reason: r.reason,
         }));
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         };
       } catch (error) {
         return {
-          content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+          content: [{ type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
           isError: true,
         };
       }
@@ -85,7 +86,8 @@ export function createMcpServer(): McpServer {
 }
 
 export async function startMcpServer(): Promise<void> {
-  const server = createMcpServer();
+  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+  const server = await createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

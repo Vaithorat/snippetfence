@@ -58,12 +58,13 @@ def process_payment(amount: Decimal, card_token: str) -> PaymentResult:
 ### 2. Generate instructions for your AI agent
 
 ```bash
-npx snippetfence generate --format claude    # → CLAUDE.md
-npx snippetfence generate --format agents    # → AGENTS.md
-npx snippetfence generate --format cursor    # → .cursor/rules/snippetfence.mdc
-npx snippetfence generate --format gemini    # → GEMINI.md
-npx snippetfence generate --format copilot   # → .github/copilot-instructions.md
-npx snippetfence generate --format all       # → all formats
+npx snippetfence generate --format claude-md    # → CLAUDE.md
+npx snippetfence generate --format agents-md    # → AGENTS.md
+npx snippetfence generate --format cursor-mdc   # → .cursor/rules/snippetfence.mdc
+npx snippetfence generate --format gemini-md    # → GEMINI.md
+npx snippetfence generate --format copilot      # → .github/copilot-instructions.md
+npx snippetfence generate --format windsurf     # → .windsurfrules
+npx snippetfence generate --format cline        # → .clinerules/snippetfence.md
 ```
 
 ### 3. Install pre-commit hook (hard enforcement)
@@ -105,7 +106,7 @@ Codex reads `AGENTS.md` automatically. Run `snippetfence generate` to create it.
 npm install -g snippetfence
 ```
 
-Run `snippetfence generate --format cursor` to create `.cursor/rules/snippetfence.mdc`.
+Run `snippetfence generate --format cursor-mdc` to create `.cursor/rules/snippetfence.mdc`.
 
 ### GitHub Copilot
 
@@ -184,11 +185,13 @@ All read `AGENTS.md` natively. Run `snippetfence generate` to create it.
 
 | Flag | Description |
 |------|-------------|
-| `--format <format>` | Output format: `claude`, `agents`, `cursor`, `gemini`, `copilot`, `windsurf`, `cline`, `all` |
+| `--format <format>` | Output format: `claude-md`, `agents-md`, `cursor-rules`, `cursor-mdc`, `gemini-md`, `copilot`, `windsurf`, `cline` |
 | `--output <path>` | Output file path (default: auto-detect from format) |
 | `--manager <manager>` | Hook manager: `husky`, `pre-commit`, `lefthook`, `raw`, `auto` (default: `auto`) |
-| `--dry-run` | Preview output without writing files |
+| `--dry-run` | Preview violations without failing the commit |
 | `--root <dir>` | Root directory to scan (default: `.`) |
+| `--all` | Check working tree changes, not just staged |
+| `--ci` | Output machine-readable JSON (for `check` and `doctor` commands) |
 
 ## Annotation Syntax
 

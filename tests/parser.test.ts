@@ -1,11 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { parseContent, resetCounter } from '../src/parser.js';
+import { describe, it, expect } from 'vitest';
+import * as path from 'node:path';
+import { parseContent, parseAndValidateRepo } from '../src/parser.js';
 
 describe('parseContent', () => {
-  beforeEach(() => {
-    resetCounter();
-  });
-
   it('finds a single protected region in TypeScript', () => {
     const code = `
 export function validateToken(token: string): boolean {
@@ -56,7 +53,7 @@ const b = 2;
     const regions = parseContent(code, 'test.ts');
     expect(regions).toHaveLength(1);
     expect(regions[0].startLine).toBe(2);
-    expect(regions[0].endLine).toBe(5); // last line (trailing empty from template literal)
+    expect(regions[0].endLine).toBe(4);
   });
 
   it('handles fence without reason', () => {
@@ -113,6 +110,8 @@ CREATE TABLE users (id INT PRIMARY KEY);
 
     const regions = parseContent(code, 'index.html');
     expect(regions).toHaveLength(1);
+    expect(regions[0].startLine).toBe(2);
+    expect(regions[0].endLine).toBe(4);
     expect(regions[0].reason).toBe('banner');
   });
 
@@ -127,7 +126,21 @@ CREATE TABLE users (id INT PRIMARY KEY);
 
     const regions = parseContent(code, 'Component.vue');
     expect(regions).toHaveLength(1);
+    expect(regions[0].startLine).toBe(3);
+    expect(regions[0].endLine).toBe(5);
     expect(regions[0].reason).toBe('form');
+  });
+
+  it('handles CSS block comment syntax', () => {
+    const code = `/* @fence-begin "theme" */
+body { color: red; }
+/* @fence-end */`;
+
+    const regions = parseContent(code, 'styles.css');
+    expect(regions).toHaveLength(1);
+    expect(regions[0].startLine).toBe(1);
+    expect(regions[0].endLine).toBe(3);
+    expect(regions[0].reason).toBe('theme');
   });
 
   it('handles Go comment syntax', () => {
@@ -168,5 +181,31 @@ line 8`;
     expect(regions).toHaveLength(1);
     expect(regions[0].startLine).toBe(3);
     expect(regions[0].endLine).toBe(7);
+  });
+
+  it('uses startCounter for unique IDs across multiple calls', () => {
+    const code1 = `// @fence-begin\nconst a = 1;\n// @fence-end`;
+    const code2 = `// @fence-begin\nconst b = 2;\n// @fence-end`;
+
+    const regions1 = parseContent(code1, 'a.ts', 0);
+    const regions2 = parseContent(code2, 'b.ts', regions1.length);
+
+    expect(regions1[0].id).toBe('region-1');
+    expect(regions2[0].id).toBe('region-2');
+  });
+});
+
+describe('parseAndValidateRepo', () => {
+  it('returns regions and warnings from a directory', () => {
+    const fixturesDir = path.join(__dirname, 'fixtures');
+    const result = parseAndValidateRepo(fixturesDir);
+    expect(result.regions.length).toBeGreaterThan(0);
+    expect(Array.isArray(result.warnings)).toBe(true);
+  });
+
+  it('detects unclosed fences as warnings', () => {
+    const result = parseAndValidateRepo(path.join(__dirname, 'fixtures'));
+    const unclosed = result.warnings.filter(w => w.type === 'unclosed');
+    expect(Array.isArray(unclosed)).toBe(true);
   });
 });

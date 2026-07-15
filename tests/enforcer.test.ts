@@ -37,9 +37,8 @@ describe('parseDiffChangedLines', () => {
 
     const lines = parseDiffChangedLines(diff);
     expect(lines).toContain(1);
-    expect(lines).toContain(2);
     expect(lines).toContain(10);
-    expect(lines).toContain(11);
+    expect(lines).toHaveLength(2);
   });
 
   it('returns empty array for empty diff', () => {
@@ -54,5 +53,29 @@ describe('parseDiffChangedLines', () => {
 
     const lines = parseDiffChangedLines(diff);
     expect(lines).toEqual([1]);
+  });
+
+  it('only counts added lines, not context or removed', () => {
+    const diff = `@@ -10,3 +10,4 @@
+ context line
+-old line
++new line 1
++new line 2`;
+
+    const lines = parseDiffChangedLines(diff);
+    expect(lines).toEqual([11, 12]);
+  });
+
+  it('handles mixed context, removed, and added lines', () => {
+    const diff = `@@ -5,6 +5,4 @@
+ kept
+ removed1
+ removed2
++added1
+ kept2
+ kept3`;
+
+    const lines = parseDiffChangedLines(diff);
+    expect(lines).toEqual([8]);
   });
 });

@@ -85,7 +85,7 @@ export function getEndPattern(syntax: SyntaxStyle): RegExp {
   if (syntax.blockComment) {
     const [, close] = syntax.blockComment;
     const escaped = escapeRegex(close);
-    return new RegExp(`${escaped}\\s*@fence-end`);
+    return new RegExp(`@fence-end\\s*${escaped}`);
   }
   return /@fence-end\s*$/;
 }
@@ -93,5 +93,3 @@ export function getEndPattern(syntax: SyntaxStyle): RegExp {
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
-export { SYNTAX_MAP, DEFAULT_SYNTAX };

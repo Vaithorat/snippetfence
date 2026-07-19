@@ -1,12 +1,12 @@
 {
   "name": "snippetfence",
-  "version": "1.0.0",
-  "description": "Protect code regions from AI agents with simple annotations",
+  "version": "1.0.1",
+  "description": "Protect critical code regions from AI agent edits with fence annotations, generated instructions, and pre-commit enforcement",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "snippetfence": "./dist/cli.js"
+    "snippetfence": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -57,12 +57,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/snippetfence/snippetfence.git"
+    "url": "git+https://github.com/Vaithorat/snippetfence.git"
   },
   "bugs": {
-    "url": "https://github.com/snippetfence/snippetfence/issues"
+    "url": "https://github.com/Vaithorat/snippetfence/issues"
   },
-  "homepage": "https://github.com/snippetfence/snippetfence#readme",
+  "homepage": "https://github.com/Vaithorat/snippetfence#readme",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

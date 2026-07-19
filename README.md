@@ -11,8 +11,8 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/snippetfence"><img src="https://img.shields.io/npm/v/snippetfence?style=flat-square&color=111111" alt="npm version"></a>
-  <a href="https://github.com/snippetfence/snippetfence/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/snippetfence?style=flat-square&color=111111" alt="license"></a>
-  <a href="#"><img src="https://img.shields.io/npm/dm/snippetfence?style=flat-square&color=111111" alt="npm downloads"></a>
+  <a href="https://github.com/Vaithorat/snippetfence/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Vaithorat/snippetfence?style=flat-square&color=111111" alt="license"></a>
+  <a href="https://www.npmjs.com/package/snippetfence"><img src="https://img.shields.io/npm/dm/snippetfence?style=flat-square&color=111111" alt="npm downloads"></a>
   <img src="https://img.shields.io/badge/works%20with-15%2B%20agents-111111?style=flat-square" alt="works with 15+ agents">
 </p>
 
@@ -122,7 +122,7 @@ Run `snippetfence generate --format copilot` to create `.github/copilot-instruct
 npm install -g snippetfence
 ```
 
-Run `snippetfence generate --format gemini` to create `GEMINI.md`.
+Run `snippetfence generate --format gemini-md` to create `GEMINI.md`.
 
 ### Windsurf / Devin Desktop
 
@@ -146,7 +146,7 @@ Run `snippetfence generate --format cline` to create `.clinerules/snippetfence.m
 npm install -g snippetfence
 ```
 
-Codex reads `AGENTS.md` automatically. Run `snippetfence generate` to create it.
+Run `snippetfence generate` to create `AGENTS.md`, then reference it from your OpenCode agent instructions.
 
 ### Aider
 

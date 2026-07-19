@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 1.0.3 - 2026-07-19
+
+### Added
+
+- Added trusted publishing support for npm releases from GitHub Actions.
+- Added a release guard that verifies the pushed tag matches the package version before publishing.
+
+### Changed
+
+- Updated the release workflow to use current GitHub Actions versions and Node.js 22.
+- Published GitHub repository metadata improvements, including description, homepage, topics, tags, and release entries for prior versions.
+
 ## 1.0.2 - 2026-07-19
 
 ### Fixed

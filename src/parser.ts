@@ -1,16 +1,24 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import fg from 'fast-glob';
+import { DEFAULT_IGNORE, DEFAULT_INCLUDE, loadConfig, resolvePolicy, toRepoRelativePath, validateConfig } from './config.js';
 import { getSyntaxForFile, getBeginPattern, getEndPattern } from './syntax.js';
-import type { ProtectedRegion, FenceWarning } from './types.js';
-import { loadConfig } from './config.js';
+import type { EffectivePolicy, FenceWarning, ProtectedRegion, ResolvedConfig } from './types.js';
 
-export function parseFile(filePath: string): ProtectedRegion[] {
+export function parseFile(filePath: string, rootDir?: string): ProtectedRegion[] {
   const content = fs.readFileSync(filePath, 'utf-8');
-  return parseContent(content, filePath);
+  const projectRoot = rootDir ?? detectProjectRoot(filePath);
+  const config = loadConfig(projectRoot);
+  const policy = resolvePolicy(config, projectRoot, filePath);
+  return parseContent(content, filePath, 0, policy);
 }
 
-export function parseContent(content: string, filePath: string, startCounter: number = 0): ProtectedRegion[] {
+export function parseContent(
+  content: string,
+  filePath: string,
+  startCounter: number = 0,
+  policy: EffectivePolicy = { severity: 'error' }
+): ProtectedRegion[] {
   const syntax = getSyntaxForFile(filePath);
   const beginRegex = getBeginPattern(syntax);
   const endRegex = getEndPattern(syntax);
@@ -28,34 +36,41 @@ export function parseContent(content: string, filePath: string, startCounter: nu
       if (beginMatch) {
         openRegion = { startLine: lineNum, reason: getFenceReason(beginMatch) };
       }
-    } else {
-      if (endRegex.test(line)) {
-        counter++;
-        regions.push({
-          id: `region-${counter}`,
-          startLine: openRegion.startLine,
-          endLine: lineNum,
-          filePath: path.resolve(filePath),
-          reason: openRegion.reason,
-        });
-        openRegion = null;
-      }
+    } else if (endRegex.test(line)) {
+      counter++;
+      regions.push(createRegion(counter, openRegion.startLine, lineNum, filePath, openRegion.reason, policy));
+      openRegion = null;
     }
   }
 
   if (openRegion !== null) {
     const lastContentLine = lines.length > 0 && lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
     counter++;
-    regions.push({
-      id: `region-${counter}`,
-      startLine: openRegion.startLine,
-      endLine: lastContentLine,
-      filePath: path.resolve(filePath),
-      reason: openRegion.reason,
-    });
+    regions.push(createRegion(counter, openRegion.startLine, lastContentLine, filePath, openRegion.reason, policy));
   }
 
   return regions;
+}
+
+function createRegion(
+  counter: number,
+  startLine: number,
+  endLine: number,
+  filePath: string,
+  reason: string | undefined,
+  policy: EffectivePolicy
+): ProtectedRegion {
+  return {
+    id: `region-${counter}`,
+    startLine,
+    endLine,
+    filePath: path.resolve(filePath),
+    reason,
+    severity: policy.severity,
+    owners: policy.owners ? [...policy.owners] : undefined,
+    tags: policy.tags ? [...policy.tags] : undefined,
+    message: policy.message,
+  };
 }
 
 function getFenceReason(beginMatch: RegExpExecArray): string | undefined {
@@ -98,24 +113,22 @@ export function validateFencesInContent(content: string, filePath: string): Fenc
       if (beginMatch) {
         openRegion = { startLine: lineNum };
       }
+    } else if (endRegex.test(line)) {
+      openRegion = null;
     } else {
-      if (endRegex.test(line)) {
-        openRegion = null;
-      } else {
-        const nestedBegin = beginRegex.exec(line);
-        if (nestedBegin) {
-          warnings.push({
-            type: 'nested',
-            message: `Nested @fence-begin at line ${lineNum} while region from line ${openRegion.startLine} is still open`,
-            line: lineNum,
-            filePath,
-          });
-        }
+      const nestedBegin = beginRegex.exec(line);
+      if (nestedBegin) {
+        warnings.push({
+          type: 'nested',
+          message: `Nested @fence-begin at line ${lineNum} while region from line ${openRegion.startLine} is still open`,
+          line: lineNum,
+          filePath,
+        });
       }
     }
 
     const trimmed = line.trim();
-    const isComment = commentPrefixes.some(p => trimmed.startsWith(p));
+    const isComment = commentPrefixes.some(prefix => trimmed.startsWith(prefix));
     if (isComment) {
       for (const { typo, correct } of TYPO_PATTERNS) {
         if (typo.test(line)) {
@@ -142,39 +155,48 @@ export function validateFencesInContent(content: string, filePath: string): Fenc
   return warnings;
 }
 
-export const DEFAULT_IGNORE = ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/build/**'];
-const DEFAULT_PATTERNS = ['**/*.{ts,tsx,js,jsx,go,rs,py,java,c,cpp,cs,swift,kt,scala,php,sql,html,xml,vue,svelte,lua,hs,yaml,yml,toml,sh,bash,r,rb,pl,ini,mjs,cjs,scss,css}'];
+export { DEFAULT_IGNORE, DEFAULT_INCLUDE };
 
-function getRepoFiles(rootDir: string, patterns?: string[]): string[] {
-  const config = loadConfig(rootDir);
-  const ignore = [...DEFAULT_IGNORE, ...(config.exclude ?? [])];
-  const includePatterns = config.include ?? (patterns ?? DEFAULT_PATTERNS);
+export function getRepoFiles(rootDir: string, patterns?: string[], config?: ResolvedConfig): string[] {
+  const resolvedConfig = config ?? loadConfig(rootDir);
+  const includePatterns = patterns ?? resolvedConfig.include ?? DEFAULT_INCLUDE;
   return fg.sync(includePatterns, {
     cwd: rootDir,
     absolute: true,
-    ignore,
+    ignore: resolvedConfig.exclude ?? DEFAULT_IGNORE,
+    dot: true,
   });
 }
 
 export function parseRepo(rootDir: string, patterns?: string[]): ProtectedRegion[] {
-  const files = getRepoFiles(rootDir, patterns);
+  const validation = validateConfig(rootDir);
+  if (!validation.valid) {
+    const firstError = validation.issues.find(issue => issue.level === 'error');
+    throw new Error(firstError?.message ?? 'Invalid snippetfence configuration');
+  }
+
+  const files = getRepoFiles(rootDir, patterns, validation.config);
   const allRegions: ProtectedRegion[] = [];
   let counter = 0;
+
   for (const file of files) {
     try {
-      const regions = parseContent(fs.readFileSync(file, 'utf-8'), file, counter);
+      const policy = resolvePolicy(validation.config, rootDir, file);
+      const regions = parseContent(fs.readFileSync(file, 'utf-8'), file, counter, policy);
       counter += regions.length;
       allRegions.push(...regions);
     } catch {
       // Skip files that can't be read
     }
   }
+
   return allRegions;
 }
 
 export function validateRepo(rootDir: string, patterns?: string[]): FenceWarning[] {
-  const files = getRepoFiles(rootDir, patterns);
+  const files = getRepoFiles(rootDir, patterns, getSafeConfig(rootDir));
   const allWarnings: FenceWarning[] = [];
+
   for (const file of files) {
     try {
       allWarnings.push(...validateFencesInContent(fs.readFileSync(file, 'utf-8'), file));
@@ -182,11 +204,13 @@ export function validateRepo(rootDir: string, patterns?: string[]): FenceWarning
       // Skip files that can't be read
     }
   }
+
   return allWarnings;
 }
 
-export function parseAndValidateRepo(rootDir: string, patterns?: string[]): { regions: ProtectedRegion[]; warnings: FenceWarning[] } {
-  const files = getRepoFiles(rootDir, patterns);
+export function parseAndValidateRepo(rootDir: string, patterns?: string[]): { regions: ProtectedRegion[]; warnings: FenceWarning[]; filesChecked: number } {
+  const config = getSafeConfig(rootDir);
+  const files = getRepoFiles(rootDir, patterns, config);
   const allRegions: ProtectedRegion[] = [];
   const allWarnings: FenceWarning[] = [];
   let counter = 0;
@@ -194,7 +218,8 @@ export function parseAndValidateRepo(rootDir: string, patterns?: string[]): { re
   for (const file of files) {
     try {
       const content = fs.readFileSync(file, 'utf-8');
-      const regions = parseContent(content, file, counter);
+      const policy = resolvePolicy(config, rootDir, file);
+      const regions = parseContent(content, file, counter, policy);
       counter += regions.length;
       allRegions.push(...regions);
       allWarnings.push(...validateFencesInContent(content, file));
@@ -203,5 +228,49 @@ export function parseAndValidateRepo(rootDir: string, patterns?: string[]): { re
     }
   }
 
-  return { regions: allRegions, warnings: allWarnings };
+  return { regions: allRegions, warnings: allWarnings, filesChecked: files.length };
+}
+
+function detectProjectRoot(filePath: string): string {
+  let current = path.dirname(path.resolve(filePath));
+
+  while (true) {
+    if (
+      fs.existsSync(path.join(current, YAML_CONFIG_FILE)) ||
+      fs.existsSync(path.join(current, '.git')) ||
+      fs.existsSync(path.join(current, '.snippetfencerules'))
+    ) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return path.dirname(path.resolve(filePath));
+    }
+    current = parent;
+  }
+}
+
+function getSafeConfig(rootDir: string): ResolvedConfig {
+  const validation = validateConfig(rootDir);
+  if (validation.valid) {
+    return validation.config;
+  }
+  return loadConfigFallback(rootDir);
+}
+
+function loadConfigFallback(rootDir: string): ResolvedConfig {
+  return {
+    include: [...DEFAULT_INCLUDE],
+    exclude: [...DEFAULT_IGNORE],
+    defaults: { severity: 'error' },
+    rules: [],
+    format: 'none',
+  };
+}
+
+const YAML_CONFIG_FILE = 'snippetfence.yml';
+
+export function getRelativeRegionPath(rootDir: string, region: ProtectedRegion): string {
+  return toRepoRelativePath(rootDir, region.filePath);
 }

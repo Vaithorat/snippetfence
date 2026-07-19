@@ -1,6 +1,6 @@
 {
   "name": "snippetfence",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Protect critical code regions from AI agent edits with fence annotations, generated instructions, and pre-commit enforcement",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run",
+    "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",

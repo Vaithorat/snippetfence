@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 1.1.0 - 2026-07-19
+
+### Added
+
+- Added `snippetfence.yml` config support with defaults, per-path rules, severity, owners, tags, and message metadata.
+- Added `snippetfence validate` to report config and fence health issues in human-readable and CI-friendly formats.
+- Added `snippetfence add <file> --start <line> --end <line>` to insert fence markers safely with syntax-aware comment styles.
+- Added SARIF reporting, report file output, and explicit `--base` / `--head` diff support for CI and pull request workflows.
+- Added richer MCP protection metadata including severity, owners, tags, and message fields.
+
+### Changed
+
+- Upgraded `check` output to include policy-aware severities, machine-readable JSON, and configurable failure thresholds via `--fail-on warn|error`.
+- Made YAML config take precedence over legacy `.snippetfencerules` while preserving legacy compatibility when YAML is absent.
+- Expanded repository validation so config warnings and malformed fence layouts can be surfaced together.
+- Normalized machine-readable relative paths across JSON, SARIF, and MCP responses.
+- Corrected `validate` file counts to report all scanned files, including clean repos.
+- Updated the package test script to build `dist` before running Vitest so CLI integration tests always exercise fresh artifacts.
+
+### Tests
+
+- Added regression coverage for YAML config parsing, ordered policy resolution, SARIF/report-file output, base/head diffing, fail-on severity behavior, validate aggregation, add command insertion, and MCP metadata responses.
+- Added sanity coverage for invalid-glob plus unmatched-rule interactions, machine-readable path normalization, `validate --ci` file counts, invalid `add --style`, and overlapping `add` ranges.
+
+### Docs
+
+- Updated the README and implementation plan to document the v1.1 policy-aware workflow, migration path, and release checklist status.
+
 ## 1.0.4 - 2026-07-19
 
 ### Added

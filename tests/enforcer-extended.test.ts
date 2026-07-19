@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { extractDiffHunk, checkAllChanges, checkStagedChanges, checkViolations } from '../src/enforcer.js';
+import { extractDiffHunk, checkAllChanges, checkRefChanges, checkStagedChanges, checkViolations } from '../src/enforcer.js';
 import type { ProtectedRegion } from '../src/types.js';
 
 function initRepo(): string {
@@ -71,6 +71,7 @@ describe('checkViolations', () => {
     endLine: end,
     filePath: ABS_PATH,
     reason: 'test',
+    severity: 'error',
   });
 
   it('detects violations when changed lines overlap region', () => {
@@ -169,6 +170,49 @@ describe('git-backed enforcement', () => {
     expect(result.passed).toBe(false);
     expect(result.filesChecked).toBe(1);
     expect(result.violations.length).toBeGreaterThan(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('checks protected changes between supplied refs', () => {
+    const repoDir = initRepo();
+
+    writeRepoFile(repoDir, 'snippetfence.yml', 'defaults:\n  severity: error\n');
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst value = 1;\n// @fence-end\n`);
+    commitAll(repoDir, 'initial');
+    const baseRef = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst value = 2;\n// @fence-end\n`);
+    commitAll(repoDir, 'updated');
+    const headRef = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    const result = checkRefChanges(repoDir, baseRef, headRef);
+    expect(result.passed).toBe(false);
+    expect(result.violations.length).toBeGreaterThan(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('treats warn-level policy as non-blocking when fail-on error is used', () => {
+    const repoDir = initRepo();
+
+    writeRepoFile(repoDir, 'snippetfence.yml', [
+      'rules:',
+      '  - paths:',
+      '      - "protected.ts"',
+      '    severity: warn',
+      '',
+    ].join('\n'));
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst value = 1;\n// @fence-end\n`);
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst value = 2;\n// @fence-end\n`);
+    execFileSync('git', ['add', 'protected.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkStagedChanges(repoDir, { failOn: 'error' });
+    expect(result.passed).toBe(true);
+    expect(result.warningCount).toBeGreaterThan(0);
+    expect(result.errorCount).toBe(0);
 
     fs.rmSync(repoDir, { recursive: true, force: true });
   });

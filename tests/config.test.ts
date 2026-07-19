@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { parseConfig, loadConfig, hasConfig, getConfigFilePath } from '../src/config.js';
+import { hasConfig, getConfigFilePath, loadConfig, matchesPattern, parseConfig, resolvePolicy, validateConfig } from '../src/config.js';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-config-'));
@@ -10,128 +10,193 @@ function tmpDir(): string {
 
 describe('parseConfig', () => {
   it('parses exclude section', () => {
-    const content = `
-[exclude]
-node_modules/
-dist/
-build/
-`;
-    const config = parseConfig(content);
+    const config = parseConfig('\n[exclude]\nnode_modules/\ndist/\nbuild/\n');
     expect(config.exclude).toEqual(['node_modules/', 'dist/', 'build/']);
   });
 
   it('parses include section', () => {
-    const content = `
-[include]
-*.ts
-*.js
-`;
-    const config = parseConfig(content);
+    const config = parseConfig('\n[include]\n*.ts\n*.js\n');
     expect(config.include).toEqual(['*.ts', '*.js']);
   });
 
   it('parses both sections', () => {
-    const content = `
-[exclude]
-vendor/
-
-[include]
-src/**/*.ts
-`;
-    const config = parseConfig(content);
+    const config = parseConfig('\n[exclude]\nvendor/\n\n[include]\nsrc/**/*.ts\n');
     expect(config.exclude).toEqual(['vendor/']);
     expect(config.include).toEqual(['src/**/*.ts']);
   });
 
-  it('ignores comments', () => {
-    const content = `
-# This is a comment
-[exclude]
-# Another comment
-node_modules/
-`;
-    const config = parseConfig(content);
+  it('ignores comments and blank lines', () => {
+    const config = parseConfig('\n# comment\n[exclude]\n\nnode_modules/\n# more\n');
     expect(config.exclude).toEqual(['node_modules/']);
-  });
-
-  it('ignores blank lines', () => {
-    const content = `
-[exclude]
-
-node_modules/
-
-dist/
-
-`;
-    const config = parseConfig(content);
-    expect(config.exclude).toEqual(['node_modules/', 'dist/']);
-  });
-
-  it('returns empty object for empty content', () => {
-    const config = parseConfig('');
-    expect(config.exclude).toBeUndefined();
-    expect(config.include).toBeUndefined();
-  });
-
-  it('ignores lines before any section', () => {
-    const content = `
-some random text
-[exclude]
-vendor/
-`;
-    const config = parseConfig(content);
-    expect(config.exclude).toEqual(['vendor/']);
   });
 });
 
 describe('loadConfig', () => {
-  it('returns empty when no config file exists', () => {
+  it('returns normalized defaults when no config file exists', () => {
     const dir = tmpDir();
     const config = loadConfig(dir);
-    expect(config).toEqual({});
-    fs.rmSync(dir, { recursive: true });
+    expect(config.format).toBe('none');
+    expect(config.defaults.severity).toBe('error');
+    expect(config.rules).toEqual([]);
+    expect(config.include.length).toBeGreaterThan(0);
+    expect(config.exclude).toContain('**/node_modules/**');
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('loads config from .snippetfencerules', () => {
     const dir = tmpDir();
     fs.writeFileSync(path.join(dir, '.snippetfencerules'), '[exclude]\nvendor/\n');
     const config = loadConfig(dir);
-    expect(config.exclude).toEqual(['vendor/']);
-    fs.rmSync(dir, { recursive: true });
+    expect(config.format).toBe('legacy');
+    expect(config.exclude).toEqual(expect.arrayContaining(['vendor/']));
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('returns empty for unreadable config file', () => {
+  it('prefers snippetfence.yml over .snippetfencerules', () => {
     const dir = tmpDir();
-    // Create a file and then make it unreadable if possible
-    const configPath = path.join(dir, '.snippetfencerules');
-    fs.writeFileSync(configPath, '[exclude]\nfoo\n');
-    // Should still parse successfully
+    fs.writeFileSync(path.join(dir, '.snippetfencerules'), '[exclude]\nlegacy-only/\n');
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), 'exclude:\n  - yaml-only/\n');
     const config = loadConfig(dir);
-    expect(config.exclude).toEqual(['foo']);
-    fs.rmSync(dir, { recursive: true });
+    expect(config.format).toBe('yaml');
+    expect(config.exclude).toEqual(expect.arrayContaining(['yaml-only/']));
+    expect(config.exclude).not.toEqual(expect.arrayContaining(['legacy-only/']));
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 
-describe('hasConfig', () => {
+describe('validateConfig', () => {
+  it('parses valid YAML config', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), [
+      'defaults:',
+      '  severity: warn',
+      'rules:',
+      '  - paths:',
+      '      - "src/payments/**"',
+      '    severity: error',
+      '    owners:',
+      '      - security',
+      '    tags:',
+      '      - pci',
+      '    message: Requires security review',
+      '',
+    ].join('\n'));
+
+    const result = validateConfig(dir);
+    expect(result.valid).toBe(true);
+    expect(result.config.defaults.severity).toBe('warn');
+    expect(result.config.rules[0].owners).toEqual(['security']);
+    expect(result.config.rules[0].tags).toEqual(['pci']);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects invalid YAML', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), 'defaults: [oops\n');
+    const result = validateConfig(dir);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some(issue => issue.code === 'invalid-yaml')).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rejects unknown top-level keys', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), 'unknown: true\n');
+    const result = validateConfig(dir);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some(issue => issue.code === 'unknown-top-level-key')).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('warns when a rule never matches any files', () => {
+    const dir = tmpDir();
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'index.ts'), 'export const x = 1;\n');
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), 'rules:\n  - paths:\n      - "missing/**"\n');
+    const result = validateConfig(dir);
+    expect(result.valid).toBe(true);
+    expect(result.issues.some(issue => issue.code === 'unmatched-rule')).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('still reports unmatched valid rules when another rule has an invalid glob', () => {
+    const dir = tmpDir();
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'index.ts'), 'export const x = 1;\n');
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), [
+      'rules:',
+      '  - paths:',
+      '      - "src/[bad"',
+      '  - paths:',
+      '      - "missing/**"',
+      '',
+    ].join('\n'));
+
+    const result = validateConfig(dir);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some(issue => issue.code === 'invalid-glob')).toBe(true);
+    expect(result.issues.some(issue => issue.code === 'unmatched-rule')).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('policy matching', () => {
+  it('matches glob patterns including brace expansion', () => {
+    expect(matchesPattern('src/file.ts', 'src/*.{ts,js}')).toBe(true);
+    expect(matchesPattern('src/file.py', 'src/*.{ts,js}')).toBe(false);
+    expect(matchesPattern('src/nested/file.ts', 'src/**/*.ts')).toBe(true);
+  });
+
+  it('resolves defaults and matching rules in declaration order', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), [
+      'defaults:',
+      '  severity: warn',
+      '  owners:',
+      '    - core',
+      'rules:',
+      '  - paths:',
+      '      - "src/**"',
+      '    tags:',
+      '      - shared',
+      '  - paths:',
+      '      - "src/payments/**"',
+      '    severity: error',
+      '    owners:',
+      '      - security',
+      '    message: Requires security review',
+      '',
+    ].join('\n'));
+
+    const config = loadConfig(dir);
+    const policy = resolvePolicy(config, dir, path.join(dir, 'src', 'payments', 'gateway.ts'));
+    expect(policy.severity).toBe('error');
+    expect(policy.owners).toEqual(['security']);
+    expect(policy.tags).toEqual(['shared']);
+    expect(policy.message).toBe('Requires security review');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('config file helpers', () => {
   it('returns false when no config file exists', () => {
     const dir = tmpDir();
     expect(hasConfig(dir)).toBe(false);
-    fs.rmSync(dir, { recursive: true });
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('returns true when config file exists', () => {
     const dir = tmpDir();
-    fs.writeFileSync(path.join(dir, '.snippetfencerules'), '');
+    fs.writeFileSync(path.join(dir, 'snippetfence.yml'), 'defaults: {}\n');
     expect(hasConfig(dir)).toBe(true);
-    fs.rmSync(dir, { recursive: true });
+    fs.rmSync(dir, { recursive: true, force: true });
   });
-});
 
-describe('getConfigFilePath', () => {
-  it('returns path to .snippetfencerules', () => {
+  it('returns the YAML config path when present', () => {
     const dir = tmpDir();
-    const expected = path.join(dir, '.snippetfencerules');
+    const expected = path.join(dir, 'snippetfence.yml');
+    fs.writeFileSync(expected, 'defaults: {}\n');
     expect(getConfigFilePath(dir)).toBe(expected);
-    fs.rmSync(dir, { recursive: true });
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

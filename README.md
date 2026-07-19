@@ -20,6 +20,8 @@
 
 **snippetfence** lets you mark code regions as protected using simple comment annotations. When AI coding agents (Claude Code, Cursor, Copilot, Codex, Gemini CLI, and more) read your code, they see the fence markers and know not to modify those regions. Pre-commit hooks provide hard enforcement — fenced code cannot be committed if modified.
 
+`v1.1` adds policy-aware protection: YAML config, severity metadata, CI reporting, validation, safer fence authoring, and richer MCP responses.
+
 ## Quick Start
 
 ```bash
@@ -27,6 +29,7 @@ npx snippetfence init        # Install pre-commit hook
 npx snippetfence generate    # Generate agent-specific instructions
 npx snippetfence scan .      # Scan repo for protected regions
 npx snippetfence check --all # Check staged, unstaged, and untracked changes
+npx snippetfence validate    # Validate config and fence layout
 ```
 
 ## How It Works
@@ -175,14 +178,17 @@ All read `AGENTS.md` natively. Run `snippetfence generate` to create it.
 | Command | Description |
 |---------|-------------|
 | `snippetfence check` | Check staged git changes against protected regions |
+| `snippetfence validate` | Validate config and fence layout across the repo |
+| `snippetfence add <file>` | Insert fence markers around a line range |
 | `snippetfence scan <file>` | Scan a file for protected regions |
 | `snippetfence scan .` | Scan entire repo for protected regions |
 | `snippetfence list` | List all protected regions in the repo |
 | `snippetfence init` | Install pre-commit hook |
 | `snippetfence generate` | Generate agent instruction files |
+| `snippetfence doctor` | Diagnose hook and project setup |
 | `snippetfence mcp` | Start MCP server for agent integration |
 
-### Options
+### Common options
 
 | Flag | Description |
 |------|-------------|
@@ -193,6 +199,101 @@ All read `AGENTS.md` natively. Run `snippetfence generate` to create it.
 | `--root <dir>` | Root directory to scan (default: `.`) |
 | `--all` | Check staged, unstaged, and untracked changes |
 | `--ci` | Output machine-readable JSON (for `check` and `doctor` commands) |
+
+### `check` options
+
+| Flag | Description |
+|------|-------------|
+| `--format text|json|sarif` | Select human or machine-readable output |
+| `--report-file <path>` | Write JSON or SARIF output to a file |
+| `--base <git-ref>` | Compare protected changes from a base ref |
+| `--head <git-ref>` | Compare against an explicit head ref (default: `HEAD`) |
+| `--fail-on warn|error` | Treat warnings as blocking, or only block on errors |
+
+### `add` options
+
+| Flag | Description |
+|------|-------------|
+| `--start <line>` | First line to protect |
+| `--end <line>` | Last line to protect |
+| `--reason <text>` | Optional inline reason to append to `@fence-begin` |
+| `--style auto|line|block` | Force comment style instead of auto-detecting |
+
+## Policy-Aware Config
+
+`snippetfence` still supports legacy `.snippetfencerules`, but `v1.1` introduces `snippetfence.yml` as the primary config format.
+
+```yaml
+defaults:
+  severity: error
+
+include:
+  - "src/**/*"
+
+exclude:
+  - "dist/**"
+
+rules:
+  - paths:
+      - "src/payments/**"
+    severity: error
+    owners:
+      - security
+    tags:
+      - pci
+    message: "Requires security review"
+
+  - paths:
+      - "src/auth/**"
+    severity: warn
+    owners:
+      - platform
+    tags:
+      - auth
+```
+
+Policy resolution rules:
+
+- `snippetfence.yml` takes precedence when present.
+- If YAML is absent, `.snippetfencerules` still works unchanged.
+- Defaults are applied first, then every matching rule is merged in declaration order.
+- Later scalar values override earlier ones.
+- `owners` and `tags` replace earlier arrays instead of appending.
+
+## CI And Reporting
+
+Text output remains the default for local use. For automation, use JSON or SARIF.
+
+```bash
+npx snippetfence check --format json
+npx snippetfence check --format sarif --report-file reports/snippetfence.sarif
+npx snippetfence check --base origin/main --head HEAD --fail-on error
+```
+
+`--fail-on warn` blocks on both warnings and errors. `--fail-on error` reports warnings but only fails on error-severity regions.
+
+## Validate Repo Health
+
+```bash
+npx snippetfence validate
+npx snippetfence validate --ci
+```
+
+`validate` reports:
+
+- malformed YAML or invalid config shape
+- invalid globs or unknown config keys
+- unmatched or duplicate rule sets where detectable
+- nested, unclosed, or otherwise malformed fence layouts
+
+## Add Fences Safely
+
+```bash
+npx snippetfence add src/auth.ts --start 10 --end 24 --reason "security review"
+npx snippetfence add templates/page.html --start 5 --end 18 --style block
+```
+
+The command preserves existing line endings, infers comment syntax when possible, and refuses overlapping or unsupported edits instead of guessing.
 
 ## Annotation Syntax
 
@@ -251,6 +352,14 @@ The MCP server exposes two tools:
 - **`check_protection`** — Check if a file/line range is protected
 - **`list_protections`** — List all protected regions in a file or directory
 
+Both responses now include policy metadata for each protected region:
+
+- `severity`
+- `owners`
+- `tags`
+- `message`
+- inline fence `reason`
+
 Configure in your MCP settings:
 
 ```json
@@ -284,8 +393,19 @@ Add to `.github/workflows/ci.yml`:
 
 ```yaml
 - name: Check protected regions
-  run: npx snippetfence check
+  run: npx snippetfence check --base origin/main --head HEAD --format sarif --report-file snippetfence.sarif
+
+- name: Validate snippetfence config and fences
+  run: npx snippetfence validate
 ```
+
+## Migration From `.snippetfencerules`
+
+You do not need to migrate immediately.
+
+- Existing `.snippetfencerules` files still work.
+- Add `snippetfence.yml` when you want per-path policy metadata and severity.
+- If both files exist, `snippetfence.yml` is used and the legacy file is ignored.
 
 ## FAQ
 

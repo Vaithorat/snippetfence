@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { parseFile, parseRepo } from './parser.js';
+import type { ProtectedRegion } from './types.js';
 import { VERSION } from './version.js';
 
 export async function createMcpServer(): Promise<import('@modelcontextprotocol/sdk/server/mcp.js').McpServer> {
@@ -21,25 +22,7 @@ export async function createMcpServer(): Promise<import('@modelcontextprotocol/s
     },
     async ({ file, startLine, endLine }) => {
       try {
-        const regions = parseFile(file);
-        let protectedRegions = regions;
-
-        if (startLine !== undefined && endLine !== undefined) {
-          protectedRegions = regions.filter(
-            r => r.startLine <= endLine && r.endLine >= startLine
-          );
-        }
-
-        const result = {
-          protected: protectedRegions.length > 0,
-          regions: protectedRegions.map(r => ({
-            id: r.id,
-            startLine: r.startLine,
-            endLine: r.endLine,
-            reason: r.reason,
-          })),
-        };
-
+        const result = getProtectionResult(file, startLine, endLine);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         };
@@ -61,15 +44,7 @@ export async function createMcpServer(): Promise<import('@modelcontextprotocol/s
     async ({ directory }) => {
       try {
         const dir = directory ?? process.cwd();
-        const regions = parseRepo(dir);
-
-        const result = regions.map(r => ({
-          file: path.relative(dir, r.filePath),
-          startLine: r.startLine,
-          endLine: r.endLine,
-          reason: r.reason,
-        }));
-
+        const result = listProtectionResults(dir);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         };
@@ -83,6 +58,38 @@ export async function createMcpServer(): Promise<import('@modelcontextprotocol/s
   );
 
   return server;
+}
+
+export function getProtectionResult(file: string, startLine?: number, endLine?: number): Record<string, unknown> {
+  const regions = parseFile(file);
+  const protectedRegions = startLine !== undefined && endLine !== undefined
+    ? regions.filter(region => region.startLine <= endLine && region.endLine >= startLine)
+    : regions;
+
+  return {
+    protected: protectedRegions.length > 0,
+    regions: protectedRegions.map(serializeRegion),
+  };
+}
+
+export function listProtectionResults(directory: string): Record<string, unknown>[] {
+  return parseRepo(directory).map(region => ({
+    file: path.relative(directory, region.filePath).replace(/\\/g, '/'),
+    ...serializeRegion(region),
+  }));
+}
+
+function serializeRegion(region: ProtectedRegion): Record<string, unknown> {
+  return {
+    id: region.id,
+    startLine: region.startLine,
+    endLine: region.endLine,
+    reason: region.reason,
+    severity: region.severity,
+    owners: region.owners,
+    tags: region.tags,
+    message: region.message,
+  };
 }
 
 export async function startMcpServer(): Promise<void> {

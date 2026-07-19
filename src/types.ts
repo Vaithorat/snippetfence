@@ -4,6 +4,10 @@ export interface ProtectedRegion {
   endLine: number;
   filePath: string;
   reason?: string;
+  severity: PolicySeverity;
+  owners?: string[];
+  tags?: string[];
+  message?: string;
 }
 
 export interface Violation {
@@ -17,6 +21,98 @@ export interface CheckResult {
   violations: Violation[];
   filesChecked: number;
   regionsChecked: number;
+  failOn: PolicySeverity;
+  errorCount: number;
+  warningCount: number;
+}
+
+export type PolicySeverity = 'warn' | 'error';
+
+export interface PolicyMetadata {
+  severity?: PolicySeverity;
+  owners?: string[];
+  tags?: string[];
+  message?: string;
+}
+
+export interface EffectivePolicy {
+  severity: PolicySeverity;
+  owners?: string[];
+  tags?: string[];
+  message?: string;
+}
+
+export interface LegacyConfig {
+  exclude?: string[];
+  include?: string[];
+}
+
+export interface ConfigRule extends PolicyMetadata {
+  paths: string[];
+}
+
+export interface YamlConfig extends LegacyConfig {
+  defaults?: PolicyMetadata;
+  rules?: ConfigRule[];
+}
+
+export interface SnippetfenceConfig extends LegacyConfig {
+  defaults?: PolicyMetadata;
+  rules?: ConfigRule[];
+  filePath?: string;
+  format: 'none' | 'legacy' | 'yaml';
+}
+
+export interface ResolvedConfig {
+  include: string[];
+  exclude: string[];
+  defaults: EffectivePolicy;
+  rules: ConfigRule[];
+  filePath?: string;
+  format: 'none' | 'legacy' | 'yaml';
+}
+
+export interface ConfigValidationIssue {
+  level: 'error' | 'warn';
+  code: string;
+  message: string;
+  filePath?: string;
+}
+
+export interface ConfigValidationResult {
+  valid: boolean;
+  config: ResolvedConfig;
+  issues: ConfigValidationIssue[];
+}
+
+export interface ValidateIssue {
+  level: 'error' | 'warn';
+  source: 'config' | 'fence';
+  code: string;
+  message: string;
+  filePath: string;
+  line?: number;
+}
+
+export interface ValidateResult {
+  passed: boolean;
+  issues: ValidateIssue[];
+  filesChecked: number;
+  regionsChecked: number;
+}
+
+export interface AddFenceOptions {
+  startLine: number;
+  endLine: number;
+  reason?: string;
+  style?: 'auto' | 'line' | 'block';
+}
+
+export interface AddFenceResult {
+  filePath: string;
+  beginLine: number;
+  endLine: number;
+  style: 'line' | 'block';
 }
 
 export interface GenerateOptions {

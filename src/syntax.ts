@@ -92,6 +92,55 @@ export function getEndPattern(syntax: SyntaxStyle): RegExp {
   return /@fence-end\s*$/;
 }
 
+export function getMarkerStyle(filePath: string, style: 'auto' | 'line' | 'block' = 'auto'): 'line' | 'block' {
+  const syntax = getSyntaxForFile(filePath);
+
+  if (style === 'line') {
+    if (!syntax.lineComment) {
+      throw new Error(`Line comment markers are not supported for ${filePath}`);
+    }
+    return 'line';
+  }
+
+  if (style === 'block') {
+    if (!syntax.blockComment) {
+      throw new Error(`Block comment markers are not supported for ${filePath}`);
+    }
+    return 'block';
+  }
+
+  if (syntax.lineComment) {
+    return 'line';
+  }
+  if (syntax.blockComment) {
+    return 'block';
+  }
+
+  throw new Error(`Could not infer a supported fence marker style for ${filePath}`);
+}
+
+export function createFenceMarker(
+  filePath: string,
+  marker: 'begin' | 'end',
+  reason?: string,
+  style: 'auto' | 'line' | 'block' = 'auto'
+): string {
+  const syntax = getSyntaxForFile(filePath);
+  const resolvedStyle = getMarkerStyle(filePath, style);
+  const suffix = marker === 'begin' && reason ? ` ${reason}` : '';
+
+  if (resolvedStyle === 'line' && syntax.lineComment) {
+    return `${syntax.lineComment} @fence-${marker}${suffix}`;
+  }
+
+  if (resolvedStyle === 'block' && syntax.blockComment) {
+    const [open, close] = syntax.blockComment;
+    return `${open} @fence-${marker}${suffix} ${close}`;
+  }
+
+  throw new Error(`Could not build ${resolvedStyle} fence markers for ${filePath}`);
+}
+
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

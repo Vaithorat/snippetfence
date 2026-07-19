@@ -6,5 +6,6 @@ dist/
 *.tsbuildinfo
 .turbo/
 coverage/
+.plans/
 .DS_Store
 Thumbs.db

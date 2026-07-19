@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 1.0.3 - 2026-07-19
+## 1.0.4 - 2026-07-19
 
 ### Added
 
@@ -11,8 +11,9 @@
 
 ### Changed
 
-- Updated the release workflow to use current GitHub Actions versions and Node.js 22.
+- Updated the release workflow to use current GitHub Actions versions plus a trusted-publishing-compatible Node.js and npm runtime.
 - Published GitHub repository metadata improvements, including description, homepage, topics, tags, and release entries for prior versions.
+- Normalized `package.json` repository metadata to exactly match the GitHub repository for npm trusted publishing.
 
 ## 1.0.2 - 2026-07-19
 

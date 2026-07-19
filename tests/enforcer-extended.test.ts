@@ -1,7 +1,29 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
-import { extractDiffHunk, checkViolations } from '../src/enforcer.js';
+import { extractDiffHunk, checkAllChanges, checkStagedChanges, checkViolations } from '../src/enforcer.js';
 import type { ProtectedRegion } from '../src/types.js';
+
+function initRepo(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-enforcer-'));
+  execFileSync('git', ['init'], { cwd: dir, stdio: 'pipe' });
+  execFileSync('git', ['config', 'user.name', 'SnippetFence Test'], { cwd: dir, stdio: 'pipe' });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir, stdio: 'pipe' });
+  return dir;
+}
+
+function writeRepoFile(repoDir: string, filePath: string, content: string): void {
+  const absPath = path.join(repoDir, filePath);
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  fs.writeFileSync(absPath, content, 'utf-8');
+}
+
+function commitAll(repoDir: string, message: string): void {
+  execFileSync('git', ['add', '.'], { cwd: repoDir, stdio: 'pipe' });
+  execFileSync('git', ['commit', '-m', message], { cwd: repoDir, stdio: 'pipe' });
+}
 
 describe('extractDiffHunk', () => {
   it('extracts the hunk containing a specific line', () => {
@@ -99,5 +121,55 @@ describe('checkViolations', () => {
     const changedLines = [11, 12, 13, 14, 15];
     const violations = checkViolations(regions, changedLines, 'test/file.ts');
     expect(violations).toHaveLength(5);
+  });
+});
+
+describe('git-backed enforcement', () => {
+  it('detects deletion-only staged changes inside fenced regions', () => {
+    const repoDir = initRepo();
+
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst one = 1;\nconst two = 2;\n// @fence-end\n`);
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst one = 1;\n// @fence-end\n`);
+    execFileSync('git', ['add', 'protected.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkStagedChanges(repoDir);
+    expect(result.passed).toBe(false);
+    expect(result.violations.length).toBeGreaterThan(0);
+    expect(result.violations[0].diffHunk).toContain('-const two = 2;');
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('checks staged changes when --all behavior is requested', () => {
+    const repoDir = initRepo();
+
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst value = 1;\n// @fence-end\n`);
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'protected.ts', `// @fence-begin auth\nconst value = 2;\n// @fence-end\n`);
+    execFileSync('git', ['add', 'protected.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkAllChanges(repoDir);
+    expect(result.passed).toBe(false);
+    expect(result.violations.length).toBeGreaterThan(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('checks untracked files when --all behavior is requested', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'README.md', '# test\n');
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'new-protected.ts', `// @fence-begin auth\nconst value = 1;\n// @fence-end\n`);
+
+    const result = checkAllChanges(repoDir);
+    expect(result.passed).toBe(false);
+    expect(result.filesChecked).toBe(1);
+    expect(result.violations.length).toBeGreaterThan(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
   });
 });

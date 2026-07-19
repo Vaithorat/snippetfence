@@ -12,6 +12,16 @@ const x = 1;
     expect(warnings).toHaveLength(0);
   });
 
+  it('reports no warnings for unquoted reasons', () => {
+    const code = `
+// @fence-begin payment processing - PCI compliance
+const x = 1;
+// @fence-end
+`;
+    const warnings = validateFencesInContent(code, 'test.ts');
+    expect(warnings).toHaveLength(0);
+  });
+
   it('detects unclosed fence', () => {
     const code = `
 // @fence-begin "unclosed"

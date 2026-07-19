@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { detectHookManager, installHook } from '../src/hook.js';
+import { detectHookManager, installHook, isSnippetfenceHookInstalled } from '../src/hook.js';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-hook-'));
@@ -91,6 +91,7 @@ describe('installHook', () => {
     const result = installHook(dir, 'husky');
     expect(result.success).toBe(true);
     const hookContent = fs.readFileSync(path.join(dir, '.husky', 'pre-commit'), 'utf-8');
+    expect(hookContent.startsWith('#!/usr/bin/env sh\n')).toBe(true);
     expect(hookContent).toContain('snippetfence');
     fs.rmSync(dir, { recursive: true });
   });
@@ -126,12 +127,25 @@ describe('installHook', () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it('updates lefthook.yaml when that file already exists', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'lefthook.yaml'), 'pre-commit:\n  jobs: []\n');
+    const result = installHook(dir, 'lefthook');
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'lefthook.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'lefthook.yml'))).toBe(false);
+    const content = fs.readFileSync(path.join(dir, 'lefthook.yaml'), 'utf-8');
+    expect(content).toContain('snippetfence');
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it('installs pre-commit framework hook', () => {
     const dir = tmpDir();
     const result = installHook(dir, 'pre-commit');
     expect(result.success).toBe(true);
     const content = fs.readFileSync(path.join(dir, '.pre-commit-config.yaml'), 'utf-8');
     expect(content).toContain('snippetfence');
+    expect(content).toContain('npx --no-install snippetfence check');
     expect(content).toContain('repos:');
     fs.rmSync(dir, { recursive: true });
   });
@@ -151,6 +165,7 @@ describe('installHook', () => {
     const result = installHook(dir, 'husky');
     expect(result.success).toBe(true);
     const content = fs.readFileSync(path.join(dir, '.husky', 'pre-commit'), 'utf-8');
+    expect(content.startsWith('#!/usr/bin/env sh\n')).toBe(true);
     expect(content).toContain('npx prettier --check .');
     expect(content).toContain('npx snippetfence check');
     fs.rmSync(dir, { recursive: true });
@@ -165,6 +180,7 @@ describe('installHook', () => {
     const content = fs.readFileSync(path.join(dir, '.pre-commit-config.yaml'), 'utf-8');
     expect(content).toContain('pre-commit-hooks');
     expect(content).toContain('snippetfence');
+    expect(content).toContain('npx --no-install snippetfence check');
     expect(content).toContain('- repo: local');
     expect(content).toMatch(/repos:\n\s+- repo:/);
     fs.rmSync(dir, { recursive: true });
@@ -180,5 +196,20 @@ describe('installHook', () => {
     expect(content).toContain('echo "running hooks"');
     expect(content).toContain('snippetfence');
     fs.rmSync(dir, { recursive: true });
+  });
+
+  it('reports snippetfence hook installation accurately', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, '.pre-commit-config.yaml'), 'repos: []\n');
+    expect(isSnippetfenceHookInstalled(dir, 'pre-commit')).toBe(false);
+    installHook(dir, 'pre-commit');
+    expect(isSnippetfenceHookInstalled(dir, 'pre-commit')).toBe(true);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('keeps published pre-commit hook pinned to the package entrypoint', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', '.pre-commit-hooks.yaml'), 'utf-8');
+    expect(content).toContain('entry: snippetfence check');
+    expect(content).toContain('language: node');
   });
 });

@@ -26,7 +26,7 @@ export function parseContent(content: string, filePath: string, startCounter: nu
     if (openRegion === null) {
       const beginMatch = beginRegex.exec(line);
       if (beginMatch) {
-        openRegion = { startLine: lineNum, reason: beginMatch[1] || undefined };
+        openRegion = { startLine: lineNum, reason: getFenceReason(beginMatch) };
       }
     } else {
       if (endRegex.test(line)) {
@@ -56,6 +56,11 @@ export function parseContent(content: string, filePath: string, startCounter: nu
   }
 
   return regions;
+}
+
+function getFenceReason(beginMatch: RegExpExecArray): string | undefined {
+  const reason = beginMatch[1] ?? beginMatch[2];
+  return reason?.trim() || undefined;
 }
 
 const TYPO_PATTERNS = [

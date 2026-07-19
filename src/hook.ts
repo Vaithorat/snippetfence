@@ -16,6 +16,23 @@ export function detectHookManager(cwd: string): HookManager {
   return 'none';
 }
 
+export function isSnippetfenceHookInstalled(cwd: string, manager?: HookManager): boolean {
+  const mgr = manager ?? detectHookManager(cwd);
+
+  switch (mgr) {
+    case 'husky':
+      return readHookIfExists(path.join(cwd, '.husky', 'pre-commit')).includes('snippetfence');
+    case 'pre-commit':
+      return readHookIfExists(path.join(cwd, '.pre-commit-config.yaml')).includes('snippetfence');
+    case 'lefthook':
+      return readHookIfExists(getLefthookConfigPath(cwd)).includes('snippetfence');
+    case 'raw':
+      return readHookIfExists(path.join(cwd, '.git', 'hooks', 'pre-commit')).includes('snippetfence');
+    default:
+      return false;
+  }
+}
+
 export function installHook(cwd: string, manager?: HookManager): { success: boolean; message: string } {
   const mgr = manager ?? detectHookManager(cwd);
 
@@ -44,15 +61,23 @@ function installHuskyHook(cwd: string): { success: boolean; message: string } {
 
   const hookPath = path.join(huskyDir, 'pre-commit');
   const snippetfenceCmd = 'npx snippetfence check';
+  const shellHeader = '#!/usr/bin/env sh\n';
 
-  if (fs.existsSync(hookPath)) {
-    const existing = fs.readFileSync(hookPath, 'utf-8');
-    if (existing.includes('snippetfence')) {
-      return { success: true, message: 'SnippetFence hook already installed in .husky/pre-commit' };
-    }
-    fs.writeFileSync(hookPath, existing.trimEnd() + '\n' + snippetfenceCmd + '\n', 'utf-8');
-  } else {
-    fs.writeFileSync(hookPath, snippetfenceCmd + '\n', 'utf-8');
+  let content = fs.existsSync(hookPath) ? fs.readFileSync(hookPath, 'utf-8') : '';
+  const alreadyInstalled = content.includes('snippetfence');
+  if (!content.startsWith('#!')) {
+    content = shellHeader + content.replace(/^\s+/, '');
+  }
+  if (!alreadyInstalled) {
+    content = content.trimEnd() + '\n' + snippetfenceCmd + '\n';
+  }
+
+  fs.writeFileSync(hookPath, content, 'utf-8');
+
+  try {
+    fs.chmodSync(hookPath, 0o755);
+  } catch {
+    // Ignore on Windows
   }
 
   try {
@@ -72,7 +97,12 @@ function installHuskyHook(cwd: string): { success: boolean; message: string } {
     }
   }
 
-  return { success: true, message: 'SnippetFence hook installed in .husky/pre-commit' };
+  return {
+    success: true,
+    message: alreadyInstalled
+      ? 'SnippetFence hook already installed in .husky/pre-commit'
+      : 'SnippetFence hook installed in .husky/pre-commit',
+  };
 }
 
 const SNIPPETFENCE_PRE_COMMIT_ENTRY = {
@@ -81,7 +111,7 @@ const SNIPPETFENCE_PRE_COMMIT_ENTRY = {
     {
       id: 'snippetfence',
       name: 'SnippetFence - Protected code regions',
-      entry: 'npx snippetfence check',
+      entry: 'npx --no-install snippetfence check',
       language: 'system',
       stages: ['pre-commit'],
     },
@@ -131,19 +161,19 @@ const SNIPPETFENCE_LEFTHOOK_ENTRY: Record<string, unknown> = {
 };
 
 function installLefthookHook(cwd: string): { success: boolean; message: string } {
-  const configPath = path.join(cwd, 'lefthook.yml');
+  const configPath = getLefthookConfigPath(cwd);
 
   if (fs.existsSync(configPath)) {
     const existing = fs.readFileSync(configPath, 'utf-8');
     if (existing.includes('snippetfence')) {
-      return { success: true, message: 'SnippetFence hook already in lefthook.yml' };
+      return { success: true, message: `SnippetFence hook already in ${path.basename(configPath)}` };
     }
 
     let doc: yaml.Document;
     try {
       doc = yaml.parseDocument(existing);
     } catch {
-      return { success: false, message: 'Failed to parse lefthook.yml — please fix YAML syntax first' };
+      return { success: false, message: `Failed to parse ${path.basename(configPath)} — please fix YAML syntax first` };
     }
 
     const lefthookPreCommit = SNIPPETFENCE_LEFTHOOK_ENTRY['pre-commit'] as { jobs: Array<Record<string, unknown>> };
@@ -165,7 +195,7 @@ function installLefthookHook(cwd: string): { success: boolean; message: string }
     fs.writeFileSync(configPath, doc.toString(), 'utf-8');
   }
 
-  return { success: true, message: 'SnippetFence hook added to lefthook.yml' };
+  return { success: true, message: `SnippetFence hook added to ${path.basename(configPath)}` };
 }
 
 function installRawHook(cwd: string): { success: boolean; message: string } {
@@ -194,4 +224,25 @@ function installRawHook(cwd: string): { success: boolean; message: string } {
   }
 
   return { success: true, message: 'SnippetFence hook installed in .git/hooks/pre-commit' };
+}
+
+function getLefthookConfigPath(cwd: string): string {
+  const yamlPath = path.join(cwd, 'lefthook.yaml');
+  if (fs.existsSync(yamlPath)) {
+    return yamlPath;
+  }
+
+  return path.join(cwd, 'lefthook.yml');
+}
+
+function readHookIfExists(filePath: string): string {
+  if (!fs.existsSync(filePath)) {
+    return '';
+  }
+
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
 }

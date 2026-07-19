@@ -65,16 +65,18 @@ export function getExtension(filePath: string): string {
 }
 
 export function getBeginPattern(syntax: SyntaxStyle): RegExp {
+  const reasonPattern = '(?:\\s+(?:"([^"]*)"|(.*?)))?';
   if (syntax.lineComment) {
     const escaped = escapeRegex(syntax.lineComment);
-    return new RegExp(`^\\s*${escaped}\\s*@fence-begin\\s*(?:"([^"]*)")?\\s*$`);
+    return new RegExp(`^\\s*${escaped}\\s*@fence-begin${reasonPattern}\\s*$`);
   }
   if (syntax.blockComment) {
-    const [open] = syntax.blockComment;
-    const escaped = escapeRegex(open);
-    return new RegExp(`${escaped}\\s*@fence-begin\\s*(?:"([^"]*)")?`);
+    const [open, close] = syntax.blockComment;
+    const escapedOpen = escapeRegex(open);
+    const escapedClose = escapeRegex(close);
+    return new RegExp(`^\\s*${escapedOpen}\\s*@fence-begin${reasonPattern}\\s*(?:${escapedClose})?\\s*$`);
   }
-  return /@fence-begin\s*(?:"([^"]*)")?\s*$/;
+  return new RegExp(`@fence-begin${reasonPattern}\\s*$`);
 }
 
 export function getEndPattern(syntax: SyntaxStyle): RegExp {

@@ -27,7 +27,7 @@ Files may contain protected regions marked with `@fence-begin` and `@fence-end` 
 1. **NEVER modify code inside `@fence-begin`/`@fence-end` regions** unless the user explicitly approves the change
 2. When you encounter a fenced region, **read it for context** but do not suggest changes to it
 3. If a task requires modifying a fenced region, **tell the user** which regions are affected and ask for confirmation
-4. The `@fence-begin` marker may include a reason (e.g., "PCI compliance", "security review required") — treat these as high-sensitivity indicators
+4. The `@fence-begin` marker may include a quoted or unquoted reason (e.g., `"PCI compliance"` or `PCI compliance`) — treat these as high-sensitivity indicators
 
 ### Checking Protection Status
 
@@ -101,6 +101,7 @@ npm run build
 
 ```bash
 npx snippetfence check        # Check staged changes
+npx snippetfence check --all  # Check staged, unstaged, and untracked changes
 npx snippetfence scan .       # Scan repo
 npx snippetfence list         # List protected regions
 npx snippetfence init         # Install pre-commit hook

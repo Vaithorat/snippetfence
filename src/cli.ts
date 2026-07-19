@@ -5,7 +5,7 @@ import pc from 'picocolors';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { parseFile, parseRepo } from './parser.js';
-import { checkStagedChanges, checkWorkingTreeChanges } from './enforcer.js';
+import { checkAllChanges, checkStagedChanges } from './enforcer.js';
 import { installHook } from './hook.js';
 import { writeGeneratedFile } from './generate.js';
 import { runDoctor } from './doctor.js';
@@ -22,13 +22,13 @@ cli
   .command('check', 'Check changes against protected regions')
   .option('--dry-run', 'Show violations without failing (preview mode)')
   .option('--root <path>', 'Root directory to scan from')
-  .option('--all', 'Check working tree changes (not just staged)')
+  .option('--all', 'Check staged, unstaged, and untracked changes')
   .option('--ci', 'Output machine-readable JSON for CI')
   .action((options: { dryRun?: boolean; root?: string; all?: boolean; ci?: boolean }) => {
     const cwd = options.root ? path.resolve(options.root) : process.cwd();
 
     const result = options.all
-      ? checkWorkingTreeChanges(cwd)
+      ? checkAllChanges(cwd)
       : checkStagedChanges(cwd);
 
     if (options.ci) {

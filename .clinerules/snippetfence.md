@@ -3,6 +3,7 @@
 ## Protected Regions
 
 Code marked with `@fence-begin`/`@fence-end` annotations is protected from AI modification.
+Reasons after `@fence-begin` may be quoted or unquoted.
 
 ### Rules:
 1. Do NOT modify code inside fenced regions
@@ -16,4 +17,5 @@ Code marked with `@fence-begin`/`@fence-end` annotations is protected from AI mo
 npx snippetfence list         # List all protected regions
 npx snippetfence scan <file>  # Check a specific file
 npx snippetfence check        # Check staged changes
+npx snippetfence check --all  # Check staged, unstaged, and untracked changes
 ```

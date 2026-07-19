@@ -1,5 +1,5 @@
 import { parseFile, parseRepo, parseAndValidateRepo, validateFences, validateRepo } from './parser.js';
-import { checkStagedChanges, checkWorkingTreeChanges } from './enforcer.js';
+import { checkAllChanges, checkStagedChanges, checkWorkingTreeChanges } from './enforcer.js';
 import { installHook } from './hook.js';
 import { generateInstructions, writeGeneratedFile } from './generate.js';
 import { isGitRepo, getGitRoot } from './utils.js';
@@ -19,6 +19,7 @@ export {
   validateFences,
   validateRepo,
   checkStagedChanges,
+  checkAllChanges,
   checkWorkingTreeChanges,
   installHook,
   generateInstructions,

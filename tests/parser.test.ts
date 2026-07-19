@@ -68,6 +68,18 @@ const protected = true;
     expect(regions[0].reason).toBeUndefined();
   });
 
+  it('handles unquoted reasons in line comments', () => {
+    const code = `
+// @fence-begin authentication - do not modify
+const protected = true;
+// @fence-end
+`;
+
+    const regions = parseContent(code, 'test.ts');
+    expect(regions).toHaveLength(1);
+    expect(regions[0].reason).toBe('authentication - do not modify');
+  });
+
   it('returns empty array when no fences', () => {
     const code = `
 const a = 1;
@@ -141,6 +153,16 @@ body { color: red; }
     expect(regions[0].startLine).toBe(1);
     expect(regions[0].endLine).toBe(3);
     expect(regions[0].reason).toBe('theme');
+  });
+
+  it('handles unquoted reasons in block comments', () => {
+    const code = `/* @fence-begin payment processing - PCI compliance */
+body { color: red; }
+/* @fence-end */`;
+
+    const regions = parseContent(code, 'styles.css');
+    expect(regions).toHaveLength(1);
+    expect(regions[0].reason).toBe('payment processing - PCI compliance');
   });
 
   it('handles Go comment syntax', () => {

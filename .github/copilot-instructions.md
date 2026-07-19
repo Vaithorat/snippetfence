@@ -9,7 +9,7 @@ This project uses `@fence-begin`/`@fence-end` annotations to mark code regions a
 1. **Do not modify** code inside `@fence-begin`/`@fence-end` regions
 2. Read fenced regions for context, but do not suggest changes
 3. If a task requires modifying a fenced region, inform the user and ask for confirmation
-4. The reason after `@fence-begin` (e.g., "PCI compliance") indicates high sensitivity
+4. The reason after `@fence-begin` may be quoted or unquoted (e.g., `"PCI compliance"` or `PCI compliance`) and indicates high sensitivity
 
 ### Checking Protection
 
@@ -17,6 +17,7 @@ This project uses `@fence-begin`/`@fence-end` annotations to mark code regions a
 npx snippetfence list         # List all protected regions
 npx snippetfence scan <file>  # Check a specific file
 npx snippetfence check        # Check staged changes
+npx snippetfence check --all  # Check staged, unstaged, and untracked changes
 ```
 
 ### Enforcement

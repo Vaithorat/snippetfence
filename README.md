@@ -26,6 +26,7 @@
 npx snippetfence init        # Install pre-commit hook
 npx snippetfence generate    # Generate agent-specific instructions
 npx snippetfence scan .      # Scan repo for protected regions
+npx snippetfence check --all # Check staged, unstaged, and untracked changes
 ```
 
 ## How It Works
@@ -190,7 +191,7 @@ All read `AGENTS.md` natively. Run `snippetfence generate` to create it.
 | `--manager <manager>` | Hook manager: `husky`, `pre-commit`, `lefthook`, `raw`, `auto` (default: `auto`) |
 | `--dry-run` | Preview violations without failing the commit |
 | `--root <dir>` | Root directory to scan (default: `.`) |
-| `--all` | Check working tree changes, not just staged |
+| `--all` | Check staged, unstaged, and untracked changes |
 | `--ci` | Output machine-readable JSON (for `check` and `doctor` commands) |
 
 ## Annotation Syntax
@@ -214,6 +215,8 @@ export const stripeConfig = { ... };
 // @fence-end
 ```
 
+Reasons may be quoted or unquoted.
+
 ## How Enforcement Works
 
 ### Layer 1: Agent Instructions (advisory)
@@ -222,7 +225,7 @@ When you run `snippetfence generate`, it creates instruction files that tell AI 
 
 ### Layer 2: Pre-commit Hook (enforced)
 
-When you run `snippetfence init`, it installs a pre-commit hook that checks staged changes against protected regions. If a fenced region is modified, the commit is **blocked**.
+When you run `snippetfence init`, it installs a pre-commit hook that checks staged changes against protected regions. If a fenced region is modified, the commit is **blocked**. For a manual full working tree check, run `snippetfence check --all`.
 
 ```bash
 $ git commit -m "update payment processing"
@@ -267,11 +270,13 @@ snippetfence includes a `.pre-commit-hooks.yaml` for the [pre-commit](https://pr
 
 ```yaml
 repos:
-  - repo: https://github.com/snippetfence/snippetfence
-    rev: v1.0.0
+  - repo: https://github.com/Vaithorat/snippetfence
+    rev: <git-tag>
     hooks:
       - id: snippetfence
 ```
+
+Pin `rev` to the release tag you want to enforce in your repo.
 
 ## GitHub Actions
 
@@ -302,7 +307,7 @@ No. The MCP server is read-only — it only checks protection status.
 ## Development
 
 ```bash
-git clone https://github.com/snippetfence/snippetfence.git
+git clone https://github.com/Vaithorat/snippetfence.git
 cd snippetfence
 npm install
 npm test

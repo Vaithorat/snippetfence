@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { runDoctor } from '../src/doctor.js';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.join(__dirname, '..');
+
+function initRepo(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-doctor-'));
+  execFileSync('git', ['init'], { cwd: dir, stdio: 'pipe' });
+  execFileSync('git', ['config', 'user.name', 'SnippetFence Test'], { cwd: dir, stdio: 'pipe' });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir, stdio: 'pipe' });
+  return dir;
+}
 
 describe('runDoctor', () => {
   it('returns a valid DoctorResult', () => {
@@ -30,5 +41,17 @@ describe('runDoctor', () => {
   it('returns warnings array', () => {
     const result = runDoctor(PROJECT_ROOT);
     expect(Array.isArray(result.warnings)).toBe(true);
+  });
+
+  it('does not report hookInstalled when only another hook framework is present', () => {
+    const dir = initRepo();
+    fs.writeFileSync(path.join(dir, '.pre-commit-config.yaml'), 'repos: []\n');
+
+    const result = runDoctor(dir);
+    expect(result.gitRepo).toBe(true);
+    expect(result.hookManager).toBe('pre-commit');
+    expect(result.hookInstalled).toBe(false);
+
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

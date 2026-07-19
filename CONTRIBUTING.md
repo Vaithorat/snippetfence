@@ -5,7 +5,7 @@ Thank you for your interest in contributing to snippetfence!
 ## Getting Started
 
 ```bash
-git clone https://github.com/snippetfence/snippetfence.git
+git clone https://github.com/Vaithorat/snippetfence.git
 cd snippetfence
 npm install
 npm test
@@ -39,6 +39,8 @@ npm run build        # Build
 ## Testing
 
 All new features must include tests. Run `npm test` before submitting.
+
+Changes to enforcement, hook installation, or fence parsing should include regression tests.
 
 ## License
 

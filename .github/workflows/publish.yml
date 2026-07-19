@@ -13,18 +13,27 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify tag matches package version
+        run: |
+          $tagVersion = "${{ github.ref_name }}" -replace '^v', ''
+          $packageVersion = node -p "require('./package.json').version"
+
+          if ($tagVersion -ne $packageVersion) {
+            Write-Error "Tag version $tagVersion does not match package.json version $packageVersion"
+            exit 1
+          }
+        shell: pwsh
+      - name: Publish to npm
+        run: npm publish --provenance --access public
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

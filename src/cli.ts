@@ -357,7 +357,11 @@ function formatTextCheckResult(result: ReturnType<typeof checkStagedChanges>, cw
   const lines = [pc.red('\n✗ Protected region violations found:\n')];
   for (const violation of result.violations) {
     const relPath = path.relative(cwd, violation.region.filePath);
-    lines.push(pc.red(`  [${violation.region.severity}] ${relPath}:${violation.region.startLine}-${violation.region.endLine} (modified at line ${violation.modifiedLine})`));
+    if (violation.deletedFile) {
+      lines.push(pc.red(`  [${violation.region.severity}] ${relPath}:${violation.region.startLine}-${violation.region.endLine} (file deleted)`));
+    } else {
+      lines.push(pc.red(`  [${violation.region.severity}] ${relPath}:${violation.region.startLine}-${violation.region.endLine} (modified at line ${violation.modifiedLine})`));
+    }
     if (violation.region.reason) {
       lines.push(pc.dim(`    Reason: ${violation.region.reason}`));
     }

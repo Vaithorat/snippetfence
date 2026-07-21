@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## 1.2.0 - 2026-07-19
+
+### Added
+
+- Detect deletion of fenced files in staged, working-tree, and ref-based checks (`--diff-filter=D`).
+- Detect renamed files that strip fence markers, checked at both old and new paths (`--diff-filter=R` with `-M`).
+- Honor `include`/`exclude` config patterns during enforcement — excluded files are now skipped in all check modes.
+- Group multiple line edits within the same protected region into a single violation with all affected lines.
+- Add `deletedFile` and `modifiedLines` fields to `Violation` type for richer violation reporting.
+- JSON and SARIF reports now include `modifiedLines` and `deletedFile` fields.
+- CI now runs on both `ubuntu-latest` and `windows-latest`.
+
+### Fixed
+
+- Added `-M` (rename detection) to all internal git diff invocations so renames are consistently detected.
+- Renamed file targets no longer produce false full-add violations via path-filtered diffs.
+- Rename sources no longer appear as false deleted-file violations when rename detection is active.
+
+### Changed
+
+- Internal diff helpers now use `git diff -M` for consistent rename detection across staged, working-tree, and ref-based checks.
+- Internal helper functions (`getStagedDeletedFiles`, `getWorkingTreeDeletedFiles`, `getDeletedFilesBetweenRefs`, `getRenamedFiles`, `getRenamedFilesBetweenRefs`) are no longer exported.
+- `checkRenameViolations` now accepts optional `baseRef`/`headRef` parameters for accurate ref-based rename checks.
+
+### Tests
+
+- Added regression coverage for staged and ref-based rename detection (fence stripping, fence preservation, staged renames).
+- Added regression coverage for deleted file detection (fenced and unprotected files).
+- Added regression coverage for config scope enforcement (excluded files skipped, include-only paths).
+- Added regression coverage for violation grouping (multiple edits in one region, separate regions).
+- Updated existing tests to account for grouped violations.
+
 ## 1.1.0 - 2026-07-19
 
 ### Added

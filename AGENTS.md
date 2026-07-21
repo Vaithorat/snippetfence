@@ -45,7 +45,7 @@ npx snippetfence scan src/payments.ts
 
 ### Enforcement
 
-snippetfence installs a pre-commit hook that blocks commits modifying protected regions. If your changes are blocked:
+snippetfence installs a pre-commit hook that blocks commits modifying protected regions. The hook also detects fenced file deletions and renames that strip fence markers. If your changes are blocked:
 
 1. Review which fenced regions are affected
 2. If the change is intentional, remove the `@fence-begin`/`@fence-end` markers
@@ -79,9 +79,11 @@ snippetfence/
 │   ├── cli.ts          # CLI entry point
 │   ├── parser.ts       # Fence marker parser
 │   ├── enforcer.ts     # Git diff enforcement
+│   ├── config.ts       # YAML/legacy config loading
 │   ├── hook.ts         # Pre-commit hook installer
 │   ├── generate.ts     # Agent instruction generator
 │   ├── mcp-server.ts   # MCP server
+│   ├── report.ts       # JSON/SARIF report builders
 │   ├── syntax.ts       # Language syntax patterns
 │   ├── types.ts        # TypeScript interfaces
 │   └── utils.ts        # Git and file utilities
@@ -104,6 +106,7 @@ npx snippetfence check        # Check staged changes
 npx snippetfence check --all  # Check staged, unstaged, and untracked changes
 npx snippetfence scan .       # Scan repo
 npx snippetfence list         # List protected regions
+npx snippetfence validate     # Validate config and fences
 npx snippetfence init         # Install pre-commit hook
 npx snippetfence generate     # Generate agent instructions
 npx snippetfence mcp          # Start MCP server

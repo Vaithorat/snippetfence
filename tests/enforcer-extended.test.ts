@@ -6,6 +6,19 @@ import * as path from 'node:path';
 import { extractDiffHunk, checkAllChanges, checkRefChanges, checkStagedChanges, checkViolations } from '../src/enforcer.js';
 import type { ProtectedRegion } from '../src/types.js';
 
+const ABS_PATH = path.resolve('test/file.ts');
+
+function makeRegion(id: string, start: number, end: number): ProtectedRegion {
+  return {
+    id,
+    startLine: start,
+    endLine: end,
+    filePath: ABS_PATH,
+    reason: 'test',
+    severity: 'error',
+  };
+}
+
 function initRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-enforcer-'));
   execFileSync('git', ['init'], { cwd: dir, stdio: 'pipe' });
@@ -63,24 +76,13 @@ describe('extractDiffHunk', () => {
 });
 
 describe('checkViolations', () => {
-  const ABS_PATH = path.resolve('test/file.ts');
-
-  const makeRegion = (id: string, start: number, end: number): ProtectedRegion => ({
-    id,
-    startLine: start,
-    endLine: end,
-    filePath: ABS_PATH,
-    reason: 'test',
-    severity: 'error',
-  });
-
   it('detects violations when changed lines overlap region', () => {
     const regions = [makeRegion('r1', 10, 20)];
     const changedLines = [12, 15];
     const violations = checkViolations(regions, changedLines, 'test/file.ts');
-    expect(violations).toHaveLength(2);
+    expect(violations).toHaveLength(1);
     expect(violations[0].modifiedLine).toBe(12);
-    expect(violations[1].modifiedLine).toBe(15);
+    expect(violations[0].modifiedLines).toEqual([12, 15]);
   });
 
   it('returns empty when no overlap', () => {
@@ -117,11 +119,12 @@ describe('checkViolations', () => {
     expect(violations[0].diffHunk).toBe('');
   });
 
-  it('reports all violations per region (no early break)', () => {
+  it('groups all modified lines per region (no early break)', () => {
     const regions = [makeRegion('r1', 10, 20)];
     const changedLines = [11, 12, 13, 14, 15];
     const violations = checkViolations(regions, changedLines, 'test/file.ts');
-    expect(violations).toHaveLength(5);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].modifiedLines).toEqual([11, 12, 13, 14, 15]);
   });
 });
 
@@ -215,5 +218,164 @@ describe('git-backed enforcement', () => {
     expect(result.errorCount).toBe(0);
 
     fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.2 - deleted file detection', () => {
+  it('detects staged deletion of a fenced file', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'protected.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    execFileSync('git', ['rm', 'protected.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkStagedChanges(repoDir);
+    expect(result.passed).toBe(false);
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0].deletedFile).toBe(true);
+    expect(result.violations[0].region.startLine).toBe(1);
+    expect(result.violations[0].region.endLine).toBe(3);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('reports deleted file violations between refs', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'protected.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    execFileSync('git', ['rm', 'protected.ts'], { cwd: repoDir, stdio: 'pipe' });
+    commitAll(repoDir, 'delete');
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    const result = checkRefChanges(repoDir, base, head);
+    expect(result.passed).toBe(false);
+    expect(result.violations.some(v => v.deletedFile)).toBe(true);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('does not flag deletion of unprotected file', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'normal.ts', 'const x = 1;\n');
+    commitAll(repoDir, 'initial');
+
+    execFileSync('git', ['rm', 'normal.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkStagedChanges(repoDir);
+    expect(result.passed).toBe(true);
+    expect(result.violations).toHaveLength(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.2 - rename detection', () => {
+  it('flags rename that strips fence markers', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'secret.ts', '// @fence-begin auth\nconst secret = 1;\nconst keep = true;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    execFileSync('git', ['mv', 'secret.ts', 'exposed.ts'], { cwd: repoDir, stdio: 'pipe' });
+    fs.writeFileSync(path.join(repoDir, 'exposed.ts'), 'const secret = 1;\nconst keep = true;\n', 'utf-8');
+    commitAll(repoDir, 'rename and strip fences');
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    const result = checkRefChanges(repoDir, base, head);
+    expect(result.passed).toBe(false);
+    expect(result.violations.some(v => v.diffHunk.includes('rename from'))).toBe(true);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('does not flag rename that preserves fence markers', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'secret.ts', '// @fence-begin auth\nconst secret = 1;\nconst keep = true;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    execFileSync('git', ['mv', 'secret.ts', 'renamed.ts'], { cwd: repoDir, stdio: 'pipe' });
+    commitAll(repoDir, 'rename only');
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    const result = checkRefChanges(repoDir, base, head);
+    expect(result.passed).toBe(true);
+    expect(result.violations).toHaveLength(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('flags staged rename that strips fence markers', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'secret.ts', '// @fence-begin auth\nconst secret = 1;\nconst keep = true;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    execFileSync('git', ['mv', 'secret.ts', 'exposed.ts'], { cwd: repoDir, stdio: 'pipe' });
+    fs.writeFileSync(path.join(repoDir, 'exposed.ts'), 'const secret = 1;\nconst keep = true;\n', 'utf-8');
+    execFileSync('git', ['add', '.'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkAllChanges(repoDir);
+    expect(result.passed).toBe(false);
+    expect(result.violations.some(v => v.diffHunk.includes('rename from'))).toBe(true);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.2 - config scope enforcement', () => {
+  it('skips excluded files during staged check', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'snippetfence.yml', 'exclude:\n  - "vendor/**"\n');
+    writeRepoFile(repoDir, 'vendor/secret.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'vendor/secret.ts', '// @fence-begin auth\nconst secret = 2;\n// @fence-end\n');
+    execFileSync('git', ['add', 'vendor/secret.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkStagedChanges(repoDir);
+    expect(result.passed).toBe(true);
+    expect(result.violations).toHaveLength(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('enforces only included files', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'snippetfence.yml', 'include:\n  - "src/**"\n');
+    writeRepoFile(repoDir, 'src/protected.ts', '// @fence-begin auth\nconst a = 1;\n// @fence-end\n');
+    writeRepoFile(repoDir, 'lib/other.ts', '// @fence-begin auth\nconst b = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'src/protected.ts', '// @fence-begin auth\nconst a = 2;\n// @fence-end\n');
+    writeRepoFile(repoDir, 'lib/other.ts', '// @fence-begin auth\nconst b = 2;\n// @fence-end\n');
+    execFileSync('git', ['add', '.'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkStagedChanges(repoDir);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].region.filePath).toContain(path.join('src', 'protected.ts'));
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.2 - violation grouping', () => {
+  it('groups multiple line edits into one violation per region', () => {
+    const regions = [makeRegion('r1', 10, 20)];
+    const changedLines = [12, 14, 16];
+    const violations = checkViolations(regions, changedLines, 'test/file.ts');
+    expect(violations).toHaveLength(1);
+    expect(violations[0].modifiedLines).toEqual([12, 14, 16]);
+  });
+
+  it('creates separate violations for different regions', () => {
+    const r1: ProtectedRegion = { id: 'r1', startLine: 1, endLine: 5, filePath: ABS_PATH, severity: 'error' };
+    const r2: ProtectedRegion = { id: 'r2', startLine: 20, endLine: 30, filePath: ABS_PATH, severity: 'error' };
+    const changedLines = [3, 25];
+    const violations = checkViolations([r1, r2], changedLines, 'test/file.ts');
+    expect(violations).toHaveLength(2);
+    expect(violations[0].modifiedLines).toEqual([3]);
+    expect(violations[1].modifiedLines).toEqual([25]);
   });
 });

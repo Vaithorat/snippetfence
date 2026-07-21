@@ -20,7 +20,7 @@
 
 **snippetfence** lets you mark code regions as protected using simple comment annotations. When AI coding agents (Claude Code, Cursor, Copilot, Codex, Gemini CLI, and more) read your code, they see the fence markers and know not to modify those regions. Pre-commit hooks provide hard enforcement — fenced code cannot be committed if modified.
 
-`v1.1` adds policy-aware protection: YAML config, severity metadata, CI reporting, validation, safer fence authoring, and richer MCP responses.
+`v1.2` adds enforcement completeness: deletion of fenced files, rename detection, config-scoped enforcement, violation grouping, and Windows CI.
 
 ## Quick Start
 
@@ -326,7 +326,7 @@ When you run `snippetfence generate`, it creates instruction files that tell AI 
 
 ### Layer 2: Pre-commit Hook (enforced)
 
-When you run `snippetfence init`, it installs a pre-commit hook that checks staged changes against protected regions. If a fenced region is modified, the commit is **blocked**. For a manual full working tree check, run `snippetfence check --all`.
+When you run `snippetfence init`, it installs a pre-commit hook that checks staged changes against protected regions. If a fenced region is modified, the commit is **blocked**. The hook also detects fenced file deletions and renames that strip fence markers. For a manual full working tree check, run `snippetfence check --all`.
 
 ```bash
 $ git commit -m "update payment processing"

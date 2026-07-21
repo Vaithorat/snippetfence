@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { loadConfig, resolvePolicy } from './config.js';
+import { loadConfig, matchesAnyPattern, resolvePolicy, toRepoRelativePath } from './config.js';
 import { parseContent } from './parser.js';
-import type { CheckResult, EffectivePolicy, PolicySeverity, ProtectedRegion, Violation } from './types.js';
+import type { CheckResult, EffectivePolicy, PolicySeverity, ProtectedRegion, ResolvedConfig, Violation } from './types.js';
 
 interface ParsedDiffHunk {
   diffHunk: string;
@@ -16,11 +16,19 @@ export interface CheckOptions {
 }
 
 export function getStagedFiles(cwd: string): string[] {
-  return getGitFileList(cwd, ['diff', '--cached', '--name-only', '--diff-filter=ACMR']);
+  return getGitFileList(cwd, ['diff', '-M', '--cached', '--name-only', '--diff-filter=ACMR']);
+}
+
+function getStagedDeletedFiles(cwd: string): string[] {
+  return getGitFileList(cwd, ['diff', '-M', '--cached', '--name-only', '--diff-filter=D']);
 }
 
 export function getWorkingTreeFiles(cwd: string): string[] {
-  return getGitFileList(cwd, ['diff', '--name-only', '--diff-filter=ACMR']);
+  return getGitFileList(cwd, ['diff', '-M', '--name-only', '--diff-filter=ACMR']);
+}
+
+function getWorkingTreeDeletedFiles(cwd: string): string[] {
+  return getGitFileList(cwd, ['diff', '-M', '--name-only', '--diff-filter=D']);
 }
 
 export function getUntrackedFiles(cwd: string): string[] {
@@ -28,7 +36,44 @@ export function getUntrackedFiles(cwd: string): string[] {
 }
 
 export function getChangedFilesBetweenRefs(cwd: string, base: string, head: string): string[] {
-  return getGitFileList(cwd, ['diff', '--name-only', '--diff-filter=ACMR', base, head]);
+  return getGitFileList(cwd, ['diff', '-M', '--name-only', '--diff-filter=ACMR', base, head]);
+}
+
+function getDeletedFilesBetweenRefs(cwd: string, base: string, head: string): string[] {
+  return getGitFileList(cwd, ['diff', '-M', '--name-only', '--diff-filter=D', base, head]);
+}
+
+interface RenameStatus {
+  oldPath: string;
+  newPath: string;
+}
+
+function getRenamedFiles(cwd: string): RenameStatus[] {
+  return getRenamedFileList(cwd, ['diff', '-M', '--cached', '--name-status', '--diff-filter=R']);
+}
+
+function getRenamedFilesBetweenRefs(cwd: string, base: string, head: string): RenameStatus[] {
+  return getRenamedFileList(cwd, ['diff', '-M', '--name-status', '--diff-filter=R', base, head]);
+}
+
+function getRenamedFileList(cwd: string, args: string[]): RenameStatus[] {
+  try {
+    const output = execFileSync('git', args, {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (!output) return [];
+    return output.split('\n').filter(Boolean).map(line => {
+      const parts = line.split('\t');
+      if (parts.length >= 3) {
+        return { oldPath: parts[1], newPath: parts[2] };
+      }
+      return null;
+    }).filter((r): r is RenameStatus => r !== null);
+  } catch {
+    return [];
+  }
 }
 
 export function getHeadFileContent(filePath: string, cwd: string): string | null {
@@ -48,15 +93,15 @@ export function getRefFileContent(ref: string, filePath: string, cwd: string): s
 }
 
 export function getStagedDiff(filePath: string, cwd: string): string {
-  return getGitDiff(cwd, ['diff', '--cached', '--unified=0', '--', filePath]);
+  return getGitDiff(cwd, ['diff', '-M', '--cached', '--unified=0', '--', filePath]);
 }
 
 export function getWorkingTreeDiff(filePath: string, cwd: string): string {
-  return getGitDiff(cwd, ['diff', '--unified=0', '--', filePath]);
+  return getGitDiff(cwd, ['diff', '-M', '--unified=0', '--', filePath]);
 }
 
 export function getDiffBetweenRefs(filePath: string, cwd: string, base: string, head: string): string {
-  return getGitDiff(cwd, ['diff', '--unified=0', base, head, '--', filePath]);
+  return getGitDiff(cwd, ['diff', '-M', '--unified=0', base, head, '--', filePath]);
 }
 
 export function getStagedFileContent(filePath: string, cwd: string): string | null {
@@ -141,14 +186,14 @@ export function checkViolations(
   const violations: Violation[] = [];
 
   for (const region of fileRegions) {
-    for (const line of changedLines) {
-      if (line >= region.startLine && line <= region.endLine) {
-        violations.push({
-          region,
-          modifiedLine: line,
-          diffHunk: diff ? extractDiffHunk(diff, line) : '',
-        });
-      }
+    const linesInRegion = changedLines.filter(line => line >= region.startLine && line <= region.endLine);
+    if (linesInRegion.length > 0) {
+      violations.push({
+        region,
+        modifiedLine: linesInRegion[0],
+        modifiedLines: linesInRegion,
+        diffHunk: diff ? extractDiffHunk(diff, linesInRegion[0]) : '',
+      });
     }
   }
 
@@ -165,10 +210,13 @@ export function checkWorkingTreeChanges(cwd: string, options: CheckOptions = {})
 
 export function checkAllChanges(cwd: string, options: CheckOptions = {}): CheckResult {
   const failOn = options.failOn ?? 'error';
+  const config = loadConfig(cwd);
   const staged = checkChanges(cwd, 'staged');
   const working = checkChanges(cwd, 'working');
   const untracked = checkUntrackedChanges(cwd);
-  const violations = dedupeViolations([...staged.violations, ...working.violations, ...untracked.violations]);
+  const renames = getRenamedFiles(cwd);
+  const renameViolations = checkRenameViolations(renames, config, cwd);
+  const violations = dedupeViolations([...staged.violations, ...working.violations, ...untracked.violations, ...renameViolations]);
   const filesChecked = new Set([...getStagedFiles(cwd), ...getWorkingTreeFiles(cwd), ...getUntrackedFiles(cwd)]).size;
 
   return finalizeResult({
@@ -185,12 +233,17 @@ export function checkAllChanges(cwd: string, options: CheckOptions = {}): CheckR
 export function checkRefChanges(cwd: string, base: string, head: string, options: CheckOptions = {}): CheckResult {
   const failOn = options.failOn ?? 'error';
   const files = getChangedFilesBetweenRefs(cwd, base, head);
+  const deletedFiles = getDeletedFilesBetweenRefs(cwd, base, head);
+  const renames = getRenamedFilesBetweenRefs(cwd, base, head);
   const config = loadConfig(cwd);
   const allViolations: Violation[] = [];
   let regionsChecked = 0;
+  const renamedTo = new Set(renames.map(r => r.newPath));
 
   for (const file of files) {
+    if (renamedTo.has(file)) continue; // ponytail: rename targets handled by checkRenameViolations; path-filtered diff shows false full-add
     const absPath = path.resolve(cwd, file);
+    if (!isFileInScope(config, cwd, absPath)) continue;
     const policy = resolvePolicy(config, cwd, absPath);
     const previousRegions = parsePreviousRegions(getRefFileContent(base, file, cwd), absPath, policy);
     const currentRegions = parsePreviousRegions(getRefFileContent(head, file, cwd), absPath, policy);
@@ -204,10 +257,14 @@ export function checkRefChanges(cwd: string, base: string, head: string, options
     allViolations.push(...checkDiffViolations(previousRegions, currentRegions, absPath, diff));
   }
 
+  const getRef = (file: string) => parsePreviousRegions(getRefFileContent(base, file, cwd), path.resolve(cwd, file), { severity: 'error' });
+  allViolations.push(...checkDeletedFileViolations(deletedFiles, config, cwd, getRef));
+  allViolations.push(...checkRenameViolations(renames, config, cwd, base, head));
+
   return finalizeResult({
     passed: allViolations.length === 0,
     violations: dedupeViolations(allViolations),
-    filesChecked: files.length,
+    filesChecked: files.length + deletedFiles.length,
     regionsChecked,
     failOn,
     errorCount: 0,
@@ -215,14 +272,75 @@ export function checkRefChanges(cwd: string, base: string, head: string, options
   }, failOn);
 }
 
+function checkDeletedFileViolations(
+  deletedFiles: string[],
+  config: ResolvedConfig,
+  cwd: string,
+  getRefContent: (file: string) => ProtectedRegion[]
+): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of deletedFiles) {
+    const absPath = path.resolve(cwd, file);
+    if (!isFileInScope(config, cwd, absPath)) continue;
+    const regions = getRefContent(file);
+    for (const region of regions) {
+      violations.push({
+        region,
+        modifiedLine: 0,
+        modifiedLines: [],
+        diffHunk: `diff --git a/${file} b/${file}\ndeleted file mode 100644`,
+        deletedFile: true,
+      });
+    }
+  }
+  return violations;
+}
+
+function isFileInScope(config: ResolvedConfig, rootDir: string, filePath: string): boolean {
+  const relPath = toRepoRelativePath(rootDir, filePath);
+  if (matchesAnyPattern(relPath, config.exclude)) return false;
+  if (matchesAnyPattern(relPath, config.include)) return true;
+  return config.include.length === 0;
+}
+
+function checkRenameViolations(renames: RenameStatus[], config: ResolvedConfig, cwd: string, baseRef = 'HEAD', headRef = 'HEAD'): Violation[] {
+  const violations: Violation[] = [];
+
+  for (const { oldPath, newPath } of renames) {
+    const oldAbs = path.resolve(cwd, oldPath);
+    const newAbs = path.resolve(cwd, newPath);
+    if (!isFileInScope(config, cwd, oldAbs) && !isFileInScope(config, cwd, newAbs)) continue;
+
+    const oldRegions = parsePreviousRegions(getRefFileContent(baseRef, oldPath, cwd), oldAbs, { severity: 'error' });
+    const newRegions = parsePreviousRegions(getRefFileContent(headRef, newPath, cwd), newAbs, { severity: 'error' });
+
+    if (oldRegions.length > 0 && newRegions.length === 0) {
+      for (const region of oldRegions) {
+        violations.push({
+          region,
+          modifiedLine: 0,
+          modifiedLines: [],
+          diffHunk: `rename from ${oldPath}\nrename to ${newPath}`,
+        });
+      }
+    }
+  }
+
+  return violations;
+}
+
 function checkChanges(cwd: string, mode: 'staged' | 'working'): CheckResult {
   const files = mode === 'staged' ? getStagedFiles(cwd) : getWorkingTreeFiles(cwd);
+  const deletedFiles = mode === 'staged' ? getStagedDeletedFiles(cwd) : getWorkingTreeDeletedFiles(cwd);
   const config = loadConfig(cwd);
   const allViolations: Violation[] = [];
   let regionsChecked = 0;
+  const renamedTo = new Set(mode === 'staged' ? getRenamedFiles(cwd).map(r => r.newPath) : []);
 
   for (const file of files) {
+    if (renamedTo.has(file)) continue; // ponytail: rename targets handled by checkRenameViolations
     const absPath = path.resolve(cwd, file);
+    if (!isFileInScope(config, cwd, absPath)) continue;
     const policy = resolvePolicy(config, cwd, absPath);
     let currentRegions: ProtectedRegion[];
     let previousRegions: ProtectedRegion[];
@@ -250,10 +368,15 @@ function checkChanges(cwd: string, mode: 'staged' | 'working'): CheckResult {
     allViolations.push(...checkDiffViolations(previousRegions, currentRegions, absPath, diff));
   }
 
+  const getRef = mode === 'staged'
+    ? (file: string) => parsePreviousRegions(getHeadFileContent(file, cwd), path.resolve(cwd, file), { severity: 'error' })
+    : (file: string) => parsePreviousRegions(getStagedFileContent(file, cwd), path.resolve(cwd, file), { severity: 'error' });
+  allViolations.push(...checkDeletedFileViolations(deletedFiles, config, cwd, getRef));
+
   return {
     passed: allViolations.length === 0,
     violations: dedupeViolations(allViolations),
-    filesChecked: files.length,
+    filesChecked: files.length + deletedFiles.length,
     regionsChecked,
     failOn: 'error',
     errorCount: 0,
@@ -269,6 +392,7 @@ function checkUntrackedChanges(cwd: string): CheckResult {
 
   for (const file of files) {
     const absPath = path.resolve(cwd, file);
+    if (!isFileInScope(config, cwd, absPath)) continue;
 
     try {
       const content = fs.readFileSync(absPath, 'utf-8');
@@ -311,20 +435,39 @@ function checkDiffViolations(
   const violations: Violation[] = [];
 
   for (const hunk of parseDiffHunks(diff)) {
-    for (const region of fileCurrentRegions) {
-      for (const line of hunk.addedLines) {
+    const addedByRegion = new Map<string, number[]>();
+    const removedByRegion = new Map<string, number[]>();
+
+    for (const line of hunk.addedLines) {
+      for (const region of fileCurrentRegions) {
         if (line >= region.startLine && line <= region.endLine) {
-          violations.push({ region, modifiedLine: line, diffHunk: hunk.diffHunk });
+          const key = `${region.id}:${region.filePath}`;
+          const arr = addedByRegion.get(key) ?? [];
+          arr.push(line);
+          addedByRegion.set(key, arr);
         }
       }
     }
 
-    for (const region of filePreviousRegions) {
-      for (const line of hunk.removedLines) {
+    for (const line of hunk.removedLines) {
+      for (const region of filePreviousRegions) {
         if (line >= region.startLine && line <= region.endLine) {
-          violations.push({ region, modifiedLine: line, diffHunk: hunk.diffHunk });
+          const key = `${region.id}:${region.filePath}`;
+          const arr = removedByRegion.get(key) ?? [];
+          arr.push(line);
+          removedByRegion.set(key, arr);
         }
       }
+    }
+
+    for (const [key, lines] of addedByRegion) {
+      const region = fileCurrentRegions.find(r => `${r.id}:${r.filePath}` === key)!;
+      violations.push({ region, modifiedLine: lines[0], modifiedLines: lines, diffHunk: hunk.diffHunk });
+    }
+
+    for (const [key, lines] of removedByRegion) {
+      const region = filePreviousRegions.find(r => `${r.id}:${r.filePath}` === key)!;
+      violations.push({ region, modifiedLine: lines[0], modifiedLines: lines, diffHunk: hunk.diffHunk });
     }
   }
 

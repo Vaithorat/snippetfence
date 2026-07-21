@@ -51,7 +51,7 @@ export function buildSarifReport(result: CheckResult, cwd: string): Record<strin
                   uri: toRelativePath(cwd, violation.region.filePath),
                   },
                 region: {
-                  startLine: violation.modifiedLine,
+                  startLine: violation.deletedFile ? violation.region.startLine : violation.modifiedLine,
                 },
               },
             },
@@ -63,12 +63,13 @@ export function buildSarifReport(result: CheckResult, cwd: string): Record<strin
 }
 
 function serializeViolation(violation: Violation, cwd: string): Record<string, unknown> {
-  return {
+  const result: Record<string, unknown> = {
     file: toRelativePath(cwd, violation.region.filePath),
     region: violation.region.id,
     startLine: violation.region.startLine,
     endLine: violation.region.endLine,
     modifiedLine: violation.modifiedLine,
+    modifiedLines: violation.modifiedLines,
     reason: violation.region.reason,
     severity: violation.region.severity,
     owners: violation.region.owners,
@@ -76,6 +77,10 @@ function serializeViolation(violation: Violation, cwd: string): Record<string, u
     message: violation.region.message,
     diffHunk: violation.diffHunk,
   };
+  if (violation.deletedFile) {
+    result.deletedFile = true;
+  }
+  return result;
 }
 
 function buildSarifMessage(violation: Violation, cwd: string): string {

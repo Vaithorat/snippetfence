@@ -14,6 +14,8 @@ export interface Violation {
   region: ProtectedRegion;
   modifiedLine: number;
   diffHunk: string;
+  deletedFile?: boolean;
+  modifiedLines: number[];
 }
 
 export interface CheckResult {

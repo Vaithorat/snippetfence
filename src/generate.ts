@@ -3,6 +3,11 @@ import * as path from 'node:path';
 import { parseRepo } from './parser.js';
 import type { GenerateOptions, ProtectedRegion } from './types.js';
 
+const MANAGED_BEGIN = '<!-- snippetfence-managed-begin -->';
+const MANAGED_END = '<!-- snippetfence-managed-end -->';
+
+const MANAGED_FORMATS = new Set<GenerateOptions['format']>(['claude-md', 'agents-md', 'gemini-md', 'copilot']);
+
 export function generateInstructions(rootDir: string, options: GenerateOptions): string {
   const regions = parseRepo(rootDir);
 
@@ -26,6 +31,23 @@ export function generateInstructions(rootDir: string, options: GenerateOptions):
     default:
       return generateGenericMd('Code Protection', regions, rootDir);
   }
+}
+
+export function checkGeneratedFile(rootDir: string, options: GenerateOptions): { upToDate: boolean; outputPath: string } {
+  const fileName = getOutputFileName(options.format);
+  const outputPath = options.outputPath ?? path.join(rootDir, fileName);
+  if (!fs.existsSync(outputPath)) return { upToDate: false, outputPath };
+  const existing = fs.readFileSync(outputPath, 'utf-8');
+
+  if (MANAGED_FORMATS.has(options.format)) {
+    const before = extractBeforeManaged(existing);
+    const after = extractAfterManaged(existing);
+    const expected = before + wrapManaged(generateInstructions(rootDir, options)) + after;
+    return { upToDate: existing === expected, outputPath };
+  }
+
+  const content = generateInstructions(rootDir, options);
+  return { upToDate: existing === content, outputPath };
 }
 
 function relPath(filePath: string, rootDir: string): string {
@@ -200,8 +222,38 @@ export function writeGeneratedFile(rootDir: string, options: GenerateOptions): s
   const fileName = getOutputFileName(options.format);
   const outputPath = options.outputPath ?? path.join(rootDir, fileName);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, content, 'utf-8');
+
+  if (MANAGED_FORMATS.has(options.format)) {
+    if (fs.existsSync(outputPath)) {
+      const existing = fs.readFileSync(outputPath, 'utf-8');
+      const before = extractBeforeManaged(existing);
+      const after = extractAfterManaged(existing);
+      const managed = wrapManaged(content);
+      fs.writeFileSync(outputPath, before + managed + after, 'utf-8');
+    } else {
+      fs.writeFileSync(outputPath, wrapManaged(content), 'utf-8');
+    }
+  } else {
+    fs.writeFileSync(outputPath, content, 'utf-8');
+  }
+
   return outputPath;
+}
+
+function extractBeforeManaged(content: string): string {
+  const idx = content.indexOf(MANAGED_BEGIN);
+  return idx === -1 ? content : content.slice(0, idx);
+}
+
+function extractAfterManaged(content: string): string {
+  const idx = content.indexOf(MANAGED_END);
+  if (idx === -1) return '';
+  const rest = content.slice(idx + MANAGED_END.length);
+  return rest.length > 0 && rest[0] !== '\n' ? '\n' + rest : rest;
+}
+
+function wrapManaged(content: string): string {
+  return `${MANAGED_BEGIN}\n${content}${MANAGED_END}`;
 }
 
 function getOutputFileName(format: GenerateOptions['format']): string {

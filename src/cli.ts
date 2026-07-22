@@ -4,11 +4,12 @@ import cac from 'cac';
 import pc from 'picocolors';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { addFence } from './add.js';
 import { parseFile, parseRepo } from './parser.js';
 import { checkAllChanges, checkRefChanges, checkStagedChanges } from './enforcer.js';
 import { installHook } from './hook.js';
-import { writeGeneratedFile } from './generate.js';
+import { writeGeneratedFile, checkGeneratedFile } from './generate.js';
 import { runDoctor } from './doctor.js';
 import { validateRepository } from './validate.js';
 import { buildCheckJson, buildSarifReport } from './report.js';
@@ -46,6 +47,16 @@ cli
     const cwd = options.root ? path.resolve(options.root) : process.cwd();
     const failOn = getFailOn(options.failOn);
     const format = getCheckFormat(options.format, options.ci);
+
+    if (options.base) {
+      try {
+        execFileSync('git', ['rev-parse', '--verify', options.base], { cwd, stdio: 'pipe' });
+      } catch {
+        console.error(pc.red(`Base ref "${options.base}" not found. Ensure full clone depth (fetch-depth: 0).`));
+        process.exit(EXIT_ERROR);
+      }
+    }
+
     const result = options.base
       ? checkRefChanges(cwd, options.base, options.head ?? 'HEAD', { failOn })
       : options.all
@@ -233,7 +244,8 @@ cli
   .option('--format <format>', 'Output format (claude-md, agents-md, cursor-rules, cursor-mdc, gemini-md, copilot, windsurf, cline)')
   .option('--output <path>', 'Output file path')
   .option('--root <path>', 'Root directory to scan from')
-  .action((options: { format?: string; output?: string; root?: string }) => {
+  .option('--check', 'Check if generated file is up-to-date (exit 1 if stale)')
+  .action((options: { format?: string; output?: string; root?: string; check?: boolean }) => {
     const cwd = options.root ? path.resolve(options.root) : process.cwd();
     const format = (options.format ?? 'agents-md') as GenerateOptions['format'];
 
@@ -242,6 +254,18 @@ cli
       console.error(pc.red(`Invalid format: ${format}`));
       console.error(pc.dim(`Valid formats: ${validFormats.join(', ')}`));
       process.exit(EXIT_ERROR);
+    }
+
+    if (options.check) {
+      const { upToDate, outputPath } = checkGeneratedFile(cwd, { format, outputPath: options.output });
+      if (upToDate) {
+        console.log(pc.green(`✓ Generated ${format} instructions are up-to-date at ${path.relative(cwd, outputPath)}`));
+        process.exit(EXIT_OK);
+      } else {
+        console.error(pc.red(`✗ Generated ${format} instructions are stale at ${path.relative(cwd, outputPath)}`));
+        console.error(pc.dim('Run `snippetfence generate` to update.'));
+        process.exit(EXIT_VIOLATIONS);
+      }
     }
 
     const outputPath = writeGeneratedFile(cwd, { format, outputPath: options.output });

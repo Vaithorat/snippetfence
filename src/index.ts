@@ -3,7 +3,7 @@ import { addFence } from './add.js';
 import { checkAllChanges, checkRefChanges, checkStagedChanges, checkWorkingTreeChanges } from './enforcer.js';
 import { validateRepository } from './validate.js';
 import { installHook } from './hook.js';
-import { generateInstructions, writeGeneratedFile } from './generate.js';
+import { generateInstructions, writeGeneratedFile, checkGeneratedFile } from './generate.js';
 import { isGitRepo, getGitRoot } from './utils.js';
 import { runDoctor } from './doctor.js';
 import { loadConfig, hasConfig, validateConfig } from './config.js';
@@ -29,6 +29,7 @@ export {
   installHook,
   generateInstructions,
   writeGeneratedFile,
+  checkGeneratedFile,
   isGitRepo,
   getGitRoot,
   runDoctor,

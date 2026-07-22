@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { generateInstructions, writeGeneratedFile } from '../src/generate.js';
+import { generateInstructions, writeGeneratedFile, checkGeneratedFile } from '../src/generate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
@@ -76,6 +76,65 @@ describe('writeGeneratedFile', () => {
     const outputPath = writeGeneratedFile(tmpDir, { format: 'agents-md', outputPath: customPath });
     expect(outputPath).toBe(customPath);
     expect(fs.existsSync(outputPath)).toBe(true);
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('wraps managed content in markers for .md formats', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-gen-'));
+    writeGeneratedFile(tmpDir, { format: 'agents-md' });
+    const content = fs.readFileSync(path.join(tmpDir, 'AGENTS.md'), 'utf-8');
+    expect(content).toContain('<!-- snippetfence-managed-begin -->');
+    expect(content).toContain('<!-- snippetfence-managed-end -->');
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('preserves non-managed content outside markers', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-gen-'));
+    const preamble = '# My Project\n\nCustom instructions go here.\n\n';
+    fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), preamble, 'utf-8');
+    writeGeneratedFile(tmpDir, { format: 'agents-md' });
+    const content = fs.readFileSync(path.join(tmpDir, 'AGENTS.md'), 'utf-8');
+    expect(content).toContain('# My Project');
+    expect(content).toContain('Custom instructions go here.');
+    expect(content).toContain('<!-- snippetfence-managed-begin -->');
+    expect(content).toContain('<!-- snippetfence-managed-end -->');
+    expect(content.startsWith(preamble)).toBe(true);
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('overwrites fully for non-managed formats', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-gen-'));
+    fs.writeFileSync(path.join(tmpDir, '.cursorrules'), 'old content\n', 'utf-8');
+    writeGeneratedFile(tmpDir, { format: 'cursor-rules' });
+    const content = fs.readFileSync(path.join(tmpDir, '.cursorrules'), 'utf-8');
+    expect(content).not.toContain('old content');
+    expect(content).toContain('DO NOT modify code between @fence-begin and @fence-end');
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('checkGeneratedFile', () => {
+  it('returns upToDate true when file matches', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-gen-'));
+    writeGeneratedFile(tmpDir, { format: 'agents-md' });
+    const { upToDate } = checkGeneratedFile(tmpDir, { format: 'agents-md' });
+    expect(upToDate).toBe(true);
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('returns upToDate false when file is stale', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-gen-'));
+    writeGeneratedFile(tmpDir, { format: 'agents-md' });
+    fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), 'stale content\n', 'utf-8');
+    const { upToDate } = checkGeneratedFile(tmpDir, { format: 'agents-md' });
+    expect(upToDate).toBe(false);
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('returns upToDate false when file is missing', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'snippetfence-gen-'));
+    const { upToDate } = checkGeneratedFile(tmpDir, { format: 'agents-md' });
+    expect(upToDate).toBe(false);
     fs.rmSync(tmpDir, { recursive: true });
   });
 });

@@ -379,3 +379,18 @@ describe('v1.2 - violation grouping', () => {
     expect(violations[1].modifiedLines).toEqual([25]);
   });
 });
+
+describe('v1.3 - missing base ref', () => {
+  it('returns failed result when base ref does not exist', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'protected.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    const result = checkRefChanges(repoDir, 'nonexistent-ref-abc123', 'HEAD');
+    expect(result.passed).toBe(false);
+    expect(result.violations).toHaveLength(0);
+    expect(result.filesChecked).toBe(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});

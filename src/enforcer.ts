@@ -232,6 +232,19 @@ export function checkAllChanges(cwd: string, options: CheckOptions = {}): CheckR
 
 export function checkRefChanges(cwd: string, base: string, head: string, options: CheckOptions = {}): CheckResult {
   const failOn = options.failOn ?? 'error';
+
+  if (!refExists(base, cwd)) {
+    return {
+      passed: false,
+      violations: [],
+      filesChecked: 0,
+      regionsChecked: 0,
+      failOn,
+      errorCount: 1,
+      warningCount: 0,
+    };
+  }
+
   const files = getChangedFilesBetweenRefs(cwd, base, head);
   const deletedFiles = getDeletedFilesBetweenRefs(cwd, base, head);
   const renames = getRenamedFilesBetweenRefs(cwd, base, head);
@@ -529,5 +542,18 @@ function getGitFileList(cwd: string, args: string[]): string[] {
     return output.split('\n').filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+function refExists(ref: string, cwd: string): boolean {
+  try {
+    execFileSync('git', ['rev-parse', '--verify', ref], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return true;
+  } catch {
+    return false;
   }
 }

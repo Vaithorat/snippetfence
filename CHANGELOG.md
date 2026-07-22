@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 1.3.0 - 2026-07-22
+
+### Added
+
+- Added `generate --check` mode that exits with code 1 when generated instruction files are stale or missing.
+- Added managed content markers (`<!-- snippetfence-managed-begin/end -->`) in generated `.md` files so user-written content outside the markers is preserved across regeneration.
+- Added `checkGeneratedFile` to the public API for programmatic staleness checks.
+- Added clear error message when a base ref is not found during `check --base`, suggesting `fetch-depth: 0`.
+
+### Changed
+
+- `writeGeneratedFile` now wraps managed `.md` formats in markers on first write, preserving surrounding content on subsequent regenerations.
+- Non-managed formats (`.cursorrules`, `.windsurfrules`, `.clinerules/snippetfence.md`, `.cursor/rules/protect-fenced.mdc`) continue to overwrite fully.
+- Updated README GitHub Actions example to include `fetch-depth: 0`, SARIF upload, `validate`, and `generate --check`.
+
+### Tests
+
+- Added regression coverage for `generate --check` up-to-date, stale, and missing cases.
+- Added regression coverage for managed marker round-tripping and non-managed content preservation.
+- Added regression coverage for missing base ref returning a failed result.
+
 ## 1.2.0 - 2026-07-19
 
 ### Added

@@ -20,7 +20,7 @@
 
 **snippetfence** lets you mark code regions as protected using simple comment annotations. When AI coding agents (Claude Code, Cursor, Copilot, Codex, Gemini CLI, and more) read your code, they see the fence markers and know not to modify those regions. Pre-commit hooks provide hard enforcement — fenced code cannot be committed if modified.
 
-`v1.2` adds enforcement completeness: deletion of fenced files, rename detection, config-scoped enforcement, violation grouping, and Windows CI.
+`v1.3` adds `generate --check` for CI drift detection, managed content markers to preserve user-written instructions, and clear errors for missing base refs.
 
 ## Quick Start
 
@@ -392,12 +392,34 @@ Pin `rev` to the release tag you want to enforce in your repo.
 Add to `.github/workflows/ci.yml`:
 
 ```yaml
-- name: Check protected regions
-  run: npx snippetfence check --base origin/main --head HEAD --format sarif --report-file snippetfence.sarif
+name: SnippetFence
+on: [pull_request]
 
-- name: Validate snippetfence config and fences
-  run: npx snippetfence validate
+jobs:
+  snippetfence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check protected regions
+        run: npx snippetfence check --base origin/${{ github.base_ref }} --head HEAD --format sarif --report-file snippetfence.sarif
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snippetfence.sarif
+
+      - name: Validate config and fences
+        run: npx snippetfence validate
+
+      - name: Check generated instructions are up-to-date
+        run: npx snippetfence generate --check
 ```
+
+`fetch-depth: 0` ensures the full git history is available for diff comparison. Without it, shallow clones will fail with a clear error message.
 
 ## Migration From `.snippetfencerules`
 

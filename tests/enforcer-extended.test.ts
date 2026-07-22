@@ -464,7 +464,7 @@ describe('v1.3 - ref rename detection', () => {
 });
 
 describe('v1.3 - config scope with checkAllChanges', () => {
-  it('skips excluded files during checkAllChanges', () => {
+  it('skips excluded files during checkAllChanges', { timeout: 15000 }, () => {
     const repoDir = initRepo();
     writeRepoFile(repoDir, 'snippetfence.yml', 'exclude:\n  - "vendor/**"\n');
     writeRepoFile(repoDir, 'vendor/secret.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');

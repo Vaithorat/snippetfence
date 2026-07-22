@@ -17,6 +17,7 @@ describe('report builders', () => {
       violations: [
         {
           modifiedLine: 3,
+          modifiedLines: [3],
           diffHunk: '@@ -3 +3 @@',
           region: {
             id: 'region-1',
@@ -43,5 +44,75 @@ describe('report builders', () => {
     expect(json.violations[0].file).toBe('src/nested/file.ts');
     expect(sarif.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri).toBe('src/nested/file.ts');
     expect(sarif.runs[0].results[0].message.text).toContain('src/nested/file.ts:2-4');
+  });
+
+  it('includes deletedFile flag in JSON output', () => {
+    const cwd = 'C:\\repo';
+    const filePath = path.join(cwd, 'secret.ts');
+    const result: CheckResult = {
+      passed: false,
+      failOn: 'error',
+      errorCount: 1,
+      warningCount: 0,
+      filesChecked: 1,
+      regionsChecked: 1,
+      violations: [
+        {
+          modifiedLine: 0,
+          modifiedLines: [],
+          diffHunk: 'deleted file',
+          deletedFile: true,
+          region: {
+            id: 'region-1',
+            startLine: 1,
+            endLine: 3,
+            filePath,
+            severity: 'error',
+            reason: 'auth',
+          },
+        },
+      ],
+    };
+
+    const json = buildCheckJson(result, cwd) as { violations: Array<{ deletedFile?: boolean }> };
+    expect(json.violations[0].deletedFile).toBe(true);
+  });
+
+  it('uses region startLine in SARIF for deleted files', () => {
+    const cwd = 'C:\\repo';
+    const filePath = path.join(cwd, 'secret.ts');
+    const result: CheckResult = {
+      passed: false,
+      failOn: 'error',
+      errorCount: 1,
+      warningCount: 0,
+      filesChecked: 1,
+      regionsChecked: 1,
+      violations: [
+        {
+          modifiedLine: 0,
+          modifiedLines: [],
+          diffHunk: 'deleted file',
+          deletedFile: true,
+          region: {
+            id: 'region-1',
+            startLine: 1,
+            endLine: 3,
+            filePath,
+            severity: 'error',
+            reason: 'auth',
+          },
+        },
+      ],
+    };
+
+    const sarif = buildSarifReport(result, cwd) as {
+      runs: Array<{
+        results: Array<{
+          locations: Array<{ physicalLocation: { region: { startLine: number } } }>;
+        }>;
+      }>;
+    };
+    expect(sarif.runs[0].results[0].locations[0].physicalLocation.region.startLine).toBe(1);
   });
 });

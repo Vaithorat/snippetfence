@@ -211,18 +211,17 @@ export function checkWorkingTreeChanges(cwd: string, options: CheckOptions = {})
 export function checkAllChanges(cwd: string, options: CheckOptions = {}): CheckResult {
   const failOn = options.failOn ?? 'error';
   const config = loadConfig(cwd);
-  const staged = checkChanges(cwd, 'staged');
-  const working = checkChanges(cwd, 'working');
-  const untracked = checkUntrackedChanges(cwd);
+  const staged = checkChanges(cwd, 'staged', config);
+  const working = checkChanges(cwd, 'working', config);
+  const untracked = checkUntrackedChanges(cwd, config);
   const renames = getRenamedFiles(cwd);
   const renameViolations = checkRenameViolations(renames, config, cwd);
   const violations = dedupeViolations([...staged.violations, ...working.violations, ...untracked.violations, ...renameViolations]);
-  const filesChecked = new Set([...getStagedFiles(cwd), ...getWorkingTreeFiles(cwd), ...getUntrackedFiles(cwd)]).size;
 
   return finalizeResult({
     passed: violations.length === 0,
     violations,
-    filesChecked,
+    filesChecked: staged.filesChecked + working.filesChecked + untracked.filesChecked,
     regionsChecked: staged.regionsChecked + working.regionsChecked + untracked.regionsChecked,
     failOn,
     errorCount: 0,
@@ -342,10 +341,10 @@ function checkRenameViolations(renames: RenameStatus[], config: ResolvedConfig, 
   return violations;
 }
 
-function checkChanges(cwd: string, mode: 'staged' | 'working'): CheckResult {
+function checkChanges(cwd: string, mode: 'staged' | 'working', config?: ResolvedConfig): CheckResult {
   const files = mode === 'staged' ? getStagedFiles(cwd) : getWorkingTreeFiles(cwd);
   const deletedFiles = mode === 'staged' ? getStagedDeletedFiles(cwd) : getWorkingTreeDeletedFiles(cwd);
-  const config = loadConfig(cwd);
+  const resolvedConfig = config ?? loadConfig(cwd);
   const allViolations: Violation[] = [];
   let regionsChecked = 0;
   const renamedTo = new Set(mode === 'staged' ? getRenamedFiles(cwd).map(r => r.newPath) : []);
@@ -353,8 +352,8 @@ function checkChanges(cwd: string, mode: 'staged' | 'working'): CheckResult {
   for (const file of files) {
     if (renamedTo.has(file)) continue; // ponytail: rename targets handled by checkRenameViolations
     const absPath = path.resolve(cwd, file);
-    if (!isFileInScope(config, cwd, absPath)) continue;
-    const policy = resolvePolicy(config, cwd, absPath);
+    if (!isFileInScope(resolvedConfig, cwd, absPath)) continue;
+    const policy = resolvePolicy(resolvedConfig, cwd, absPath);
     let currentRegions: ProtectedRegion[];
     let previousRegions: ProtectedRegion[];
 
@@ -384,7 +383,7 @@ function checkChanges(cwd: string, mode: 'staged' | 'working'): CheckResult {
   const getRef = mode === 'staged'
     ? (file: string) => parsePreviousRegions(getHeadFileContent(file, cwd), path.resolve(cwd, file), { severity: 'error' })
     : (file: string) => parsePreviousRegions(getStagedFileContent(file, cwd), path.resolve(cwd, file), { severity: 'error' });
-  allViolations.push(...checkDeletedFileViolations(deletedFiles, config, cwd, getRef));
+  allViolations.push(...checkDeletedFileViolations(deletedFiles, resolvedConfig, cwd, getRef));
 
   return {
     passed: allViolations.length === 0,
@@ -397,19 +396,19 @@ function checkChanges(cwd: string, mode: 'staged' | 'working'): CheckResult {
   };
 }
 
-function checkUntrackedChanges(cwd: string): CheckResult {
+function checkUntrackedChanges(cwd: string, config?: ResolvedConfig): CheckResult {
   const files = getUntrackedFiles(cwd);
-  const config = loadConfig(cwd);
+  const resolvedConfig = config ?? loadConfig(cwd);
   const allViolations: Violation[] = [];
   let regionsChecked = 0;
 
   for (const file of files) {
     const absPath = path.resolve(cwd, file);
-    if (!isFileInScope(config, cwd, absPath)) continue;
+    if (!isFileInScope(resolvedConfig, cwd, absPath)) continue;
 
     try {
       const content = fs.readFileSync(absPath, 'utf-8');
-      const policy = resolvePolicy(config, cwd, absPath);
+      const policy = resolvePolicy(resolvedConfig, cwd, absPath);
       const regions = parseContent(content, absPath, 0, policy);
       regionsChecked += regions.length;
       if (regions.length === 0) continue;
@@ -506,8 +505,12 @@ function dedupeViolations(violations: Violation[]): Violation[] {
 }
 
 function finalizeResult(result: CheckResult, failOn: PolicySeverity): CheckResult {
-  const errorCount = result.violations.filter(violation => violation.region.severity === 'error').length;
-  const warningCount = result.violations.filter(violation => violation.region.severity === 'warn').length;
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const v of result.violations) {
+    if (v.region.severity === 'error') errorCount++;
+    else if (v.region.severity === 'warn') warningCount++;
+  }
   const blockingCount = failOn === 'warn' ? result.violations.length : errorCount;
 
   return {

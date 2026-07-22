@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 - 2026-07-22
+
+### Changed
+
+- `checkChanges` and `checkUntrackedChanges` now accept an optional config parameter, reducing redundant config loads from 4 to 1 per `checkAllChanges` call.
+- `checkAllChanges` computes `filesChecked` from sub-call results instead of re-listing files, eliminating 3 redundant git invocations.
+- `finalizeResult` uses a single pass for error/warning counts instead of two filter passes.
+- All internal git diff invocations include `-M` flag for consistent rename detection across staged, working-tree, and ref-based checks.
+
+### Tests
+
+- Added regression coverage for working-tree deletion of fenced and unprotected files.
+- Added regression coverage for ref-based rename detection (fence stripping and preservation).
+- Added regression coverage for `checkAllChanges` with config scope (include/exclude).
+- Added regression coverage for JSON and SARIF reports with deleted file violations.
+- Total test count: 193.
 
 ## 1.3.0 - 2026-07-22
 

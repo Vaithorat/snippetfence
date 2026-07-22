@@ -95,8 +95,10 @@ snippetfence/
 
 ```bash
 npm install
-npm test
+npm test          # 193 tests (vitest)
 npm run build
+npm run lint      # eslint src/
+npm run typecheck # tsc --noEmit
 ```
 
 ## Common Commands

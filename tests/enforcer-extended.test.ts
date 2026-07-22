@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { extractDiffHunk, checkAllChanges, checkRefChanges, checkStagedChanges, checkViolations } from '../src/enforcer.js';
+import { extractDiffHunk, checkAllChanges, checkRefChanges, checkStagedChanges, checkWorkingTreeChanges, checkViolations } from '../src/enforcer.js';
 import type { ProtectedRegion } from '../src/types.js';
 
 const ABS_PATH = path.resolve('test/file.ts');
@@ -390,6 +390,110 @@ describe('v1.3 - missing base ref', () => {
     expect(result.passed).toBe(false);
     expect(result.violations).toHaveLength(0);
     expect(result.filesChecked).toBe(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.3 - working tree deletion', () => {
+  it('detects deletion of a fenced file in working tree', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'protected.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    fs.unlinkSync(path.join(repoDir, 'protected.ts'));
+
+    const result = checkWorkingTreeChanges(repoDir);
+    expect(result.passed).toBe(false);
+    expect(result.violations.length).toBe(1);
+    expect(result.violations[0].deletedFile).toBe(true);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('does not flag deletion of unprotected file in working tree', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'normal.ts', 'const x = 1;\n');
+    commitAll(repoDir, 'initial');
+
+    fs.unlinkSync(path.join(repoDir, 'normal.ts'));
+
+    const result = checkWorkingTreeChanges(repoDir);
+    expect(result.passed).toBe(true);
+    expect(result.violations).toHaveLength(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.3 - ref rename detection', () => {
+  it('flags rename that strips fence markers between refs', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'secret.ts', '// @fence-begin auth\nconst secret = 1;\nconst keep = true;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    execFileSync('git', ['mv', 'secret.ts', 'exposed.ts'], { cwd: repoDir, stdio: 'pipe' });
+    fs.writeFileSync(path.join(repoDir, 'exposed.ts'), 'const secret = 1;\nconst keep = true;\n', 'utf-8');
+    commitAll(repoDir, 'rename and strip fences');
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    const result = checkRefChanges(repoDir, base, head);
+    expect(result.passed).toBe(false);
+    expect(result.violations.some(v => v.diffHunk.includes('rename from'))).toBe(true);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('does not flag rename that preserves fence markers between refs', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'secret.ts', '// @fence-begin auth\nconst secret = 1;\nconst keep = true;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    execFileSync('git', ['mv', 'secret.ts', 'renamed.ts'], { cwd: repoDir, stdio: 'pipe' });
+    commitAll(repoDir, 'rename only');
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' }).trim();
+
+    const result = checkRefChanges(repoDir, base, head);
+    expect(result.passed).toBe(true);
+    expect(result.violations).toHaveLength(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.3 - config scope with checkAllChanges', () => {
+  it('skips excluded files during checkAllChanges', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'snippetfence.yml', 'exclude:\n  - "vendor/**"\n');
+    writeRepoFile(repoDir, 'vendor/secret.ts', '// @fence-begin auth\nconst secret = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'vendor/secret.ts', '// @fence-begin auth\nconst secret = 2;\n// @fence-end\n');
+    execFileSync('git', ['add', 'vendor/secret.ts'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkAllChanges(repoDir);
+    expect(result.passed).toBe(true);
+    expect(result.violations).toHaveLength(0);
+
+    fs.rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it('enforces only included files in checkAllChanges', () => {
+    const repoDir = initRepo();
+    writeRepoFile(repoDir, 'snippetfence.yml', 'include:\n  - "src/**"\n');
+    writeRepoFile(repoDir, 'src/protected.ts', '// @fence-begin auth\nconst a = 1;\n// @fence-end\n');
+    writeRepoFile(repoDir, 'lib/other.ts', '// @fence-begin auth\nconst b = 1;\n// @fence-end\n');
+    commitAll(repoDir, 'initial');
+
+    writeRepoFile(repoDir, 'src/protected.ts', '// @fence-begin auth\nconst a = 2;\n// @fence-end\n');
+    writeRepoFile(repoDir, 'lib/other.ts', '// @fence-begin auth\nconst b = 2;\n// @fence-end\n');
+    execFileSync('git', ['add', '.'], { cwd: repoDir, stdio: 'pipe' });
+
+    const result = checkAllChanges(repoDir);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].region.filePath).toContain(path.join('src', 'protected.ts'));
 
     fs.rmSync(repoDir, { recursive: true, force: true });
   });

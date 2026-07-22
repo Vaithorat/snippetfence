@@ -9,3 +9,5 @@ coverage/
 .plans/
 .DS_Store
 Thumbs.db
+ROADMAP.md
+*.gitignore

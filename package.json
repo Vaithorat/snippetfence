@@ -1,6 +1,6 @@
 {
   "name": "snippetfence",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Protect critical code regions from AI agent edits with fence annotations, generated instructions, and pre-commit enforcement",
   "type": "module",
   "main": "./dist/index.js",

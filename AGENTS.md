@@ -101,6 +101,35 @@ npm run lint      # eslint src/
 npm run typecheck # tsc --noEmit
 ```
 
+## Publishing a New Version
+
+`publish.yml` triggers on **tag pushes** matching `v*`. Bumping `package.json` and pushing the commit is NOT enough — you must also push a tag:
+
+```bash
+# 1. Bump version in package.json, commit, push
+npm version patch   # or minor/major — commits + tags automatically
+git push origin main --tags
+```
+
+If you already bumped manually (edited package.json):
+```bash
+git add package.json
+git commit -m "release: v1.x.x"
+git tag v1.x.x
+git push origin main --tags
+```
+
+Skipping the tag push = npm stays on the old version.
+
+### Release Checklist
+
+Before bumping the version, ALWAYS:
+
+1. Update `CHANGELOG.md` with a new entry for the version (date, added/changed/fixed sections)
+2. Update any other docs if behavior changed (README, generated agent instructions via `npx snippetfence generate`)
+3. Run `npm test`, `npm run lint`, `npm run typecheck` to verify everything passes
+4. Then bump, commit, tag, push
+
 ## Common Commands
 
 ```bash

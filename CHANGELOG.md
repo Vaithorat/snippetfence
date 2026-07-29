@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.3.4 - 2026-07-23
+
+### Fixed
+
+- Override `ip-address` to 10.2.1 to remediate SSRF vulnerability (CVE in `ip-address` package).
+- Bump `eslint` from ^9.27.0 to ^10.8.0 to remediate brace-expansion ReDoS vulnerability — eslint 10 replaces `minimatch` v3 with v10, which uses `brace-expansion` ^5.0.8.
+- eslint 10 also drops `chalk`, `lodash.merge`, `@eslint/eslintrc`, and several other transitive dependencies, reducing lock file size.
+
+## 1.3.3 - 2026-07-23
+
+### Fixed
+
+- Add 15-second timeout to the `skips excluded files during checkAllChanges` test to prevent flaky failures on slower CI runners.
+
+## 1.3.2 - 2026-07-23
+
+### Fixed
+
+- Override `@hono/node-server` to ^2.0.11 to remediate known vulnerability.
+- Override `esbuild` to ^0.28.1 to remediate known vulnerability.
+- Added `overrides` field to `package.json` for npm audit resolution of transitive dependency vulnerabilities.
+
 ## 1.3.1 - 2026-07-22
 
 ### Changed

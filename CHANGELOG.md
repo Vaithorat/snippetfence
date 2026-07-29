@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.5 - 2026-07-30
+
+### Changed
+
+- Added detailed changelog entries for v1.3.2, v1.3.3, and v1.3.4 with specifics from code diffs.
+- Added release checklist to `AGENTS.md` requiring changelog and doc updates before version bumps.
+
 ## 1.3.4 - 2026-07-23
 
 ### Fixed

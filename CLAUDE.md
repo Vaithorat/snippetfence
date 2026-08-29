@@ -8,3 +8,4 @@
 - If a fenced region must be modified, ask the user for explicit approval first
 - Run `npx snippetfence check` before committing to verify no protected regions were violated
 - Use `npx snippetfence check --all` when you need to validate staged, unstaged, and untracked changes together
+- Do not add `Co-Authored-By` or `Claude-Session` trailers to commit messages in this repo

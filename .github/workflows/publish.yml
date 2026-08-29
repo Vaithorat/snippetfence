@@ -32,9 +32,21 @@ jobs:
             exit 1
           }
         shell: pwsh
+      - name: Check if version is already published
+        id: check_version
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          if npm view snippetfence@"$PACKAGE_VERSION" version 2>/dev/null; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "snippetfence@$PACKAGE_VERSION is already on npm — skipping publish (likely a re-run of this workflow)."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish to npm
+        if: steps.check_version.outputs.already_published == 'false'
         run: npm publish --provenance --access public
       - name: Create GitHub Release
+        if: steps.check_version.outputs.already_published == 'false'
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
